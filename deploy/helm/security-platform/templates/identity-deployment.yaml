@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-identity
+  labels:
+    app: identity
+    app.kubernetes.io/name: identity
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: authentication
+spec:
+  replicas: {{ .Values.identity.replicaCount }}
+  selector:
+    matchLabels:
+      app: identity
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: identity
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: identity
+          image: "{{ .Values.identity.image.repository }}:{{ .Values.identity.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.identity.service.port }}
+              name: http
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.global.nodeEnv }}
+            - name: PORT
+              value: "{{ .Values.identity.service.port }}"
+            - name: LOG_LEVEL
+              value: {{ .Values.global.logLevel }}
+            - name: OIDC_ISSUER_URL
+              value: {{ .Values.identity.oidc.issuerUrl }}
+            - name: OIDC_CLIENT_ID
+              value: {{ .Values.identity.oidc.clientId }}
+            - name: OIDC_REDIRECT_URI
+              value: {{ .Values.identity.oidc.redirectUri }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.identity.oidc.clientSecretRef.name }}
+                  key: {{ .Values.identity.oidc.clientSecretRef.key }}
+            - name: PDP_URL
+              value: "http://{{ .Release.Name }}-policy-engine:{{ .Values.policyEngine.service.port }}"
+            - name: TELEMETRY_URL
+              value: "http://{{ .Release.Name }}-telemetry:{{ .Values.telemetry.service.port }}"
+            - name: ACCESS_TOKEN_TTL
+              value: "{{ .Values.identity.tokens.accessTokenTTL }}"
+            - name: REFRESH_TOKEN_TTL
+              value: "{{ .Values.identity.tokens.refreshTokenTTL }}"
+          resources:
+            {{- toYaml .Values.identity.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.identity.service.port }}
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.identity.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: signing-keys
+              mountPath: /keys
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: signing-keys
+          secret:
+            secretName: identity-signing-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-identity
+spec:
+  type: {{ .Values.identity.service.type }}
+  ports:
+    - port: {{ .Values.identity.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: identity
+    app.kubernetes.io/instance: {{ .Release.Name }}

@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "startedAt": "2026-02-11T19:32:20Z",
+  "finishedAt": "2026-02-11T19:33:15Z",
+  "baseUrl": "https://localhost:8443",
+  "durationSeconds": 30,
+  "elapsedSeconds": 43,
+  "iterationCount": 26,
+  "checks": {
+    "total": 106,
+    "passed": 106,
+    "failed": 0,
+    "maxObservedConsecutiveFailures": 0,
+    "byName": {
+      "healthz": { "passed": 26, "failed": 0 },
+      "protectedNoJwt": { "passed": 26, "failed": 0 },
+      "internalControlPlaneEdge": { "passed": 26, "failed": 0 },
+      "traceRejected": { "passed": 26, "failed": 0 },
+      "clTeSmuggling": { "passed": 2, "failed": 0 }
+    }
+  },
+  "failureBudget": {
+    "maxFailures": 5,
+    "maxConsecutiveFailures": 3,
+    "failFast": true,
+    "budgetExceeded": false,
+    "abortRequested": false,
+    "abortReason": ""
+  },
+  "healthLatencySeconds": {
+    "samples": 26,
+    "min": 0.007550,
+    "avg": 0.009188,
+    "max": 0.013980,
+    "p50": 0.008375,
+    "p95": 0.013690,
+    "p99": 0.013980
+  },
+  "containers": {
+    "restartsDetected": 0,
+    "stateFailures": 0,
+    "periodicRuntimeIssueDetected": false
+  },
+  "artifacts": {
+    "logFile": "/Users/Apple/Desktop/Security_platform/artifacts/soak/compose-soak-20260211T193220Z.log",
+    "failureDetailsFile": "/Users/Apple/Desktop/Security_platform/artifacts/soak/compose-soak-20260211T193220Z.failures.log"
+  }
+}

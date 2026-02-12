@@ -1,0 +1,369 @@
+{
+  "version": "1.0.0",
+  "timestamp": "2025-02-07T00:00:00Z",
+  "rules": [
+    {
+      "id": "rule_001",
+      "name": "Brute Force Detection",
+      "description": "Detects multiple failed authentication attempts from the same source IP within a time window",
+      "enabled": true,
+      "severity": "high",
+      "category": "authentication",
+      "detection_method": "threshold",
+      "thresholds": {
+        "failed_attempts": 5,
+        "time_window_seconds": 300,
+        "source_ip_max_attempts": 10
+      },
+      "actions": [
+        "alert",
+        "log",
+        "temporary_block"
+      ],
+      "block_duration_seconds": 900,
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_brute_force_attempts_total"
+      }
+    },
+    {
+      "id": "rule_002",
+      "name": "Privilege Escalation Detection",
+      "description": "Detects attempts to escalate user privileges or access unauthorized resources",
+      "enabled": true,
+      "severity": "critical",
+      "category": "authorization",
+      "detection_method": "anomaly",
+      "thresholds": {
+        "unauthorized_access_attempts": 3,
+        "time_window_seconds": 60,
+        "privilege_level_increase_threshold": 2
+      },
+      "actions": [
+        "alert",
+        "log",
+        "deny_access",
+        "audit"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_privilege_escalation_attempts_total"
+      }
+    },
+    {
+      "id": "rule_003",
+      "name": "Suspicious API Access Pattern",
+      "description": "Detects unusual API access patterns indicating potential data exfiltration or reconnaissance",
+      "enabled": true,
+      "severity": "high",
+      "category": "api_abuse",
+      "detection_method": "behavioral",
+      "thresholds": {
+        "api_calls_per_minute": 1000,
+        "unique_endpoints_threshold": 50,
+        "data_transfer_mb": 500,
+        "anomaly_score": 0.75
+      },
+      "actions": [
+        "alert",
+        "log",
+        "rate_limit",
+        "audit"
+      ],
+      "rate_limit_config": {
+        "requests_per_minute": 100,
+        "burst_size": 20
+      },
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_suspicious_api_access_total"
+      }
+    },
+    {
+      "id": "rule_004",
+      "name": "Policy Violation Detection",
+      "description": "Detects attempts to bypass or violate configured security policies",
+      "enabled": true,
+      "severity": "high",
+      "category": "policy",
+      "detection_method": "signature",
+      "thresholds": {
+        "policy_violation_count": 1,
+        "consecutive_violations": 3,
+        "time_window_seconds": 300
+      },
+      "actions": [
+        "alert",
+        "log",
+        "enforce_policy",
+        "audit"
+      ],
+      "enforcement_action": "deny",
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_policy_violations_total"
+      }
+    },
+    {
+      "id": "rule_005",
+      "name": "Token Abuse Detection",
+      "description": "Detects suspicious token usage including token replay attacks and stolen token usage",
+      "enabled": true,
+      "severity": "high",
+      "category": "token_security",
+      "detection_method": "anomaly",
+      "thresholds": {
+        "token_reuse_attempts": 2,
+        "geographic_velocity_mph": 500,
+        "simultaneous_sessions": 5,
+        "token_age_hours": 24
+      },
+      "actions": [
+        "alert",
+        "log",
+        "revoke_token",
+        "audit"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_token_abuse_attempts_total"
+      }
+    },
+    {
+      "id": "rule_006",
+      "name": "Data Exfiltration Detection",
+      "description": "Detects large data transfers or unauthorized access to sensitive data repositories",
+      "enabled": true,
+      "severity": "critical",
+      "category": "data_protection",
+      "detection_method": "behavioral",
+      "thresholds": {
+        "data_transfer_mb_per_hour": 1000,
+        "sensitive_records_accessed": 100,
+        "external_ip_transfers": true,
+        "anomaly_score": 0.85
+      },
+      "actions": [
+        "alert",
+        "log",
+        "block_transfer",
+        "audit",
+        "incident_response"
+      ],
+      "data_classification": [
+        "pii",
+        "secrets",
+        "financial",
+        "confidential"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_data_exfiltration_attempts_total"
+      }
+    },
+    {
+      "id": "rule_007",
+      "name": "Supply Chain Integrity Violation",
+      "description": "Detects tampering with dependencies, certificates, or deployment artifacts",
+      "enabled": true,
+      "severity": "critical",
+      "category": "supply_chain",
+      "detection_method": "signature",
+      "thresholds": {
+        "signature_mismatch_count": 1,
+        "certificate_validity_days": 0,
+        "artifact_hash_mismatches": 1,
+        "policy_check_failures": 1
+      },
+      "actions": [
+        "alert",
+        "log",
+        "block_deployment",
+        "audit",
+        "incident_response"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_supply_chain_violations_total"
+      }
+    },
+    {
+      "id": "rule_008",
+      "name": "Anomalous Resource Access",
+      "description": "Detects unusual access patterns to system resources or unauthorized service endpoints",
+      "enabled": true,
+      "severity": "medium",
+      "category": "resource_access",
+      "detection_method": "anomaly",
+      "thresholds": {
+        "access_frequency_deviation": 3.0,
+        "off_hours_access": true,
+        "weekend_access": true,
+        "anomaly_score": 0.70
+      },
+      "actions": [
+        "alert",
+        "log",
+        "audit"
+      ],
+      "time_based_rules": {
+        "business_hours": "09:00-17:00",
+        "timezone": "UTC",
+        "weekends_enabled": false
+      },
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_anomalous_resource_access_total"
+      }
+    },
+    {
+      "id": "rule_009",
+      "name": "Configuration Tampering Detection",
+      "description": "Detects unauthorized modifications to service configurations, certificates, or security settings",
+      "enabled": true,
+      "severity": "high",
+      "category": "integrity",
+      "detection_method": "signature",
+      "thresholds": {
+        "config_change_count": 1,
+        "critical_setting_changes": 1,
+        "certificate_chain_depth": 0,
+        "unauthorized_modifications": 1
+      },
+      "watched_paths": [
+        "/certs/*",
+        "/config/*",
+        "/etc/*",
+        "/.env*"
+      ],
+      "actions": [
+        "alert",
+        "log",
+        "restore_config",
+        "audit",
+        "incident_response"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_configuration_tampering_attempts_total"
+      }
+    },
+    {
+      "id": "rule_010",
+      "name": "System Compromise Detection",
+      "description": "Detects indicators of compromise including suspicious process execution, privilege escalation, and persistence mechanisms",
+      "enabled": true,
+      "severity": "critical",
+      "category": "system_security",
+      "detection_method": "behavioral",
+      "thresholds": {
+        "suspicious_process_count": 5,
+        "system_call_anomaly_score": 0.80,
+        "kernel_module_load_attempts": 1,
+        "privilege_elevation_attempts": 3
+      },
+      "suspicious_indicators": [
+        "reverse_shell_detection",
+        "code_injection",
+        "privilege_escalation",
+        "lateral_movement",
+        "persistence_mechanism"
+      ],
+      "actions": [
+        "alert",
+        "log",
+        "isolate_container",
+        "audit",
+        "incident_response",
+        "generate_forensics"
+      ],
+      "metrics": {
+        "enabled": true,
+        "metric_name": "security_system_compromise_indicators_total"
+      }
+    }
+  ],
+  "global_settings": {
+    "alert_aggregation_window_seconds": 60,
+    "max_alerts_per_minute": 1000,
+    "alert_retention_days": 90,
+    "audit_log_enabled": true,
+    "audit_log_path": "/data/audit/detection-audit.jsonl",
+    "metrics_enabled": true,
+    "metrics_retention_days": 30,
+    "incident_response_enabled": true,
+    "incident_response_webhook": "${INCIDENT_RESPONSE_WEBHOOK:-}"
+  },
+  "notification_channels": {
+    "alert_webhook": {
+      "enabled": true,
+      "url": "${ALERT_WEBHOOK_URL:-}",
+      "timeout_seconds": 5,
+      "retries": 3,
+      "headers": {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer ${ALERT_WEBHOOK_TOKEN:-}"
+      }
+    },
+    "email": {
+      "enabled": false,
+      "smtp_host": "${SMTP_HOST:-}",
+      "smtp_port": 587,
+      "from_address": "security-alerts@zerotrust.local",
+      "recipients": []
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "${SLACK_WEBHOOK_URL:-}",
+      "channel": "#security-alerts"
+    }
+  },
+  "correlation_rules": {
+    "enabled": true,
+    "time_window_seconds": 300,
+    "rules": [
+      {
+        "id": "correlation_001",
+        "name": "Multi-stage Attack Detection",
+        "description": "Correlates multiple detection rules to identify coordinated attack patterns",
+        "rules_to_correlate": [
+          "rule_001",
+          "rule_002",
+          "rule_003"
+        ],
+        "correlation_threshold": 2,
+        "severity_escalation": true
+      },
+      {
+        "id": "correlation_002",
+        "name": "Supply Chain + System Compromise",
+        "description": "Correlates supply chain violations with system compromise indicators",
+        "rules_to_correlate": [
+          "rule_007",
+          "rule_010"
+        ],
+        "correlation_threshold": 1,
+        "severity_escalation": true
+      }
+    ]
+  },
+  "exclusions": {
+    "enabled": true,
+    "ip_whitelist": [],
+    "service_whitelist": [],
+    "user_whitelist": [],
+    "domain_whitelist": [
+      "localhost",
+      "127.0.0.1",
+      "gateway",
+      "identity",
+      "policy-engine",
+      "telemetry",
+      "supply-chain",
+      "redis",
+      "prometheus",
+      "grafana",
+      "jaeger"
+    ]
+  }
+}

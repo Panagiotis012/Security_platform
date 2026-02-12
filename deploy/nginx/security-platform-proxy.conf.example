@@ -1,0 +1,69 @@
+# Example nginx reverse-proxy for Security Platform (public edge).
+#
+# Use this when you run nginx/Apache/Caddy on the HOST (ports 80/443),
+# and run this repo's public stack with Envoy published to:
+#   http://127.0.0.1:18080
+#
+# IMPORTANT:
+# - This file is a template. Adapt paths/domains to your environment.
+# - Keep Prometheus/Grafana/Jaeger bound to localhost; do not expose them publicly.
+#
+# Recommended flow:
+# 1) Obtain a cert with certbot (Let's Encrypt):
+#      sudo certbot --nginx -d api.example.com
+# 2) Replace api.example.com below with your real domain.
+
+# Allow websocket upgrade header mapping.
+map $http_upgrade $connection_upgrade {
+  default upgrade;
+  ''      close;
+}
+
+server {
+  listen 80;
+  server_name api.example.com;
+
+  # If you use certbot, it will manage the ACME challenge path automatically.
+  # This redirect keeps the plain HTTP surface minimal.
+  location / {
+    return 301 https://$host$request_uri;
+  }
+}
+
+server {
+  listen 443 ssl http2;
+  server_name api.example.com;
+
+  # certbot-managed example:
+  # ssl_certificate     /etc/letsencrypt/live/api.example.com/fullchain.pem;
+  # ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+
+  # Basic hardening headers (Envoy also sets these, but "always" at nginx makes intent explicit).
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header X-Frame-Options "DENY" always;
+  add_header Referrer-Policy "no-referrer" always;
+
+  # Forward to Envoy (published by docker-compose.public.yml to localhost only).
+  location / {
+    proxy_pass http://127.0.0.1:18080;
+    proxy_http_version 1.1;
+
+    # Preserve original host/proto for routing + logs.
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-Host $host;
+
+    # Pass real client IP. IMPORTANT: do not trust client-provided XFF.
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $remote_addr;
+
+    # WebSockets (if you add WS endpoints later).
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+  }
+}
+

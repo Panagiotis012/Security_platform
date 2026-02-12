@@ -1,0 +1,15 @@
+name,status,expectation,result
+health_ready,200,service should be healthy,PASS
+xss_query_block,401,XSS payload should be blocked,FAIL
+sqli_union_block,401,SQLi payload should be blocked,FAIL
+cmdi_subshell_block,401,command injection payload should be blocked,FAIL
+ssrf_metadata_block,401,SSRF metadata target should be blocked,FAIL
+traversal_query_block,401,traversal payload should be blocked,FAIL
+double_encoded_path_block,401,double-encoded path should be rejected,FAIL
+method_override_header_block,403,method override header should be rejected,FAIL
+cl_te_smuggling_block,400,CL+TE smuggling should be rejected,PASS
+jwt_alg_none_reject,401,tampered JWT should be rejected,PASS
+cors_evil_origin_block,401,evil CORS origin should be denied,FAIL
+internal_control_plane_probe_block,401,internal control plane should not be exposed,PASS
+dev_issuer_public_abuse,403,dev issuer should not be openly usable,PASS
+burst_abuse_mitigation,blocked=80,burst attack should trigger blocking/challenge and avoid 2xx,PASS

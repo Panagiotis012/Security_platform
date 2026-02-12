@@ -1,0 +1,403 @@
+admin:
+  access_log_path: /tmp/admin_access.log
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+    # -----------------------------------------------------------------------
+    # HTTP :8080 -> redirect to HTTPS :8443
+    # -----------------------------------------------------------------------
+    - name: listener_http_redirect
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8080
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_http
+                normalize_path: true
+                merge_slashes: true
+                route_config:
+                  name: http_redirect
+                  virtual_hosts:
+                    - name: redirect
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          redirect:
+                            https_redirect: true
+                            port_redirect: 8443
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # -----------------------------------------------------------------------
+    # HTTPS :8443 (edge)
+    # -----------------------------------------------------------------------
+    - name: listener_https
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8443
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_params:
+                  tls_minimum_protocol_version: TLSv1_2
+                  tls_maximum_protocol_version: TLSv1_3
+                tls_certificates:
+                  - certificate_chain:
+                      filename: /certs/envoy.crt
+                    private_key:
+                      filename: /certs/envoy.key
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_https
+                generate_request_id: true
+                preserve_external_request_id: true
+                use_remote_address: true
+                # Trust no downstream XFF; we are the first edge hop.
+                xff_num_trusted_hops: 0
+                server_header_transformation: OVERWRITE
+                server_name: security-platform-edge
+                max_request_headers_kb: 32
+
+                common_http_protocol_options:
+                  idle_timeout: 60s
+                  headers_with_underscores_action: REJECT_REQUEST
+                stream_idle_timeout: 30s
+                request_timeout: 15s
+                normalize_path: true
+                merge_slashes: true
+
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+
+                route_config:
+                  name: edge_routes
+                  virtual_hosts:
+                    - name: gateway
+                      domains: ["*"]
+                      response_headers_to_add:
+                        - append: false
+                          header:
+                            key: strict-transport-security
+                            value: "max-age=31536000; includeSubDomains"
+                        - append: false
+                          header:
+                            key: x-content-type-options
+                            value: "nosniff"
+                        - append: false
+                          header:
+                            key: x-frame-options
+                            value: "DENY"
+                        - append: false
+                          header:
+                            key: referrer-policy
+                            value: "no-referrer"
+                        - append: false
+                          header:
+                            key: permissions-policy
+                            value: "geolocation=(), microphone=(), camera=()"
+                      routes:
+                        # Health endpoints should remain reachable even if the PDP
+                        # is unavailable. JWT is optional for these paths (see jwt rules),
+                        # and we also bypass ext_authz per-route.
+                        - match: { prefix: "/health" }
+                          route:
+                            cluster: gateway
+                            timeout: 5s
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+
+                        - match: { prefix: "/ready" }
+                          route:
+                            cluster: gateway
+                            timeout: 5s
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+
+                        - match: { prefix: "/startupz" }
+                          route:
+                            cluster: gateway
+                            timeout: 5s
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+
+                        - match: { prefix: "/auth" }
+                          route:
+                            cluster: gateway
+                            timeout: 30s
+                            rate_limits:
+                              - actions:
+                                  - generic_key:
+                                      descriptor_value: auth
+                                  - remote_address: {}
+
+                        - match: { prefix: "/" }
+                          route:
+                            cluster: gateway
+                            timeout: 30s
+                            retry_policy:
+                              retry_on: 5xx,reset,connect-failure,refused-stream
+                              num_retries: 2
+                              per_try_timeout: 5s
+                            rate_limits:
+                              - actions:
+                                  - generic_key:
+                                      descriptor_value: api
+                                  - remote_address: {}
+
+                http_filters:
+                  # Local token bucket to absorb bursts (independent of the external service).
+                  - name: envoy.filters.http.local_ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                      stat_prefix: local_rate_limiter
+                      token_bucket:
+                        max_tokens: 100
+                        tokens_per_fill: 100
+                        fill_interval: 1s
+                      filter_enabled:
+                        runtime_key: local_rate_limit_enabled
+                        default_value:
+                          numerator: 100
+                          denominator: HUNDRED
+                      filter_enforced:
+                        runtime_key: local_rate_limit_enforced
+                        default_value:
+                          numerator: 100
+                          denominator: HUNDRED
+                      response_headers_to_add:
+                        - append: false
+                          header:
+                            key: x-local-rate-limit
+                            value: "true"
+
+                  # Distributed/global rate limit service (gRPC).
+                  - name: envoy.filters.http.ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ratelimit.v3.RateLimit
+                      domain: zt-edge
+                      timeout: 0.25s
+                      failure_mode_deny: false
+                      rate_limit_service:
+                        grpc_service:
+                          envoy_grpc:
+                            cluster_name: ratelimit
+                        transport_api_version: V3
+
+                  # Validate JWT at the edge.
+                  - name: envoy.filters.http.jwt_authn
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+                      providers:
+                        zt_jwt:
+                          issuer: "https://identity.zerotrust.local"
+                          audiences: ["https://api.zerotrust.local"]
+                          remote_jwks:
+                            http_uri:
+                              uri: https://identity:8182/.well-known/jwks.json
+                              cluster: identity_jwks
+                              timeout: 2s
+                            cache_duration: 600s
+                          from_headers:
+                            - name: authorization
+                              value_prefix: "Bearer "
+                          # Keep the original Authorization header for the upstream (gateway)
+                          # so it can perform its own validation / auditing if desired.
+                          forward: true
+                          forward_payload_header: "x-jwt-payload"
+                      rules:
+                        - match: { prefix: "/auth" }
+                          requires: { allow_missing: {} }
+                        - match: { path: "/.well-known/jwks.json" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/health" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/healthz" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/ready" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/readyz" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/startupz" }
+                          requires: { allow_missing: {} }
+                        - match: { prefix: "/" }
+                          requires:
+                            provider_name: zt_jwt
+
+                  # Policy enforcement hook (Envoy ext_authz -> policy-engine -> OPA).
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      http_service:
+                        server_uri:
+                          uri: https://policy-engine:8181
+                          cluster: policy_engine_authz
+                          timeout: 0.5s
+                        path_prefix: "/v1/envoy/authz"
+                        authorization_request:
+                          allowed_headers:
+                            patterns:
+                              - exact: authorization
+                              - exact: cookie
+                              - exact: x-jwt-payload
+                              - exact: x-request-id
+                              - exact: x-correlation-id
+                              - exact: x-forwarded-for
+                              - exact: user-agent
+                          headers_to_add:
+                            - key: x-zt-original-method
+                              value: "%REQ(:METHOD)%"
+                            - key: x-zt-original-path
+                              value: "%REQ(:PATH)%"
+                            - key: x-zt-original-host
+                              value: "%REQ(:AUTHORITY)%"
+                            - key: x-zt-downstream-remote-address
+                              value: "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%"
+                        authorization_response:
+                          allowed_client_headers:
+                            patterns:
+                              - exact: x-zt-step-up-required
+                              - exact: x-zt-required-step-up-level
+
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    # Gateway upstream (mTLS).
+    - name: gateway
+      type: STRICT_DNS
+      connect_timeout: 2s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: gateway
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: gateway
+                      port_value: 8443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: gateway
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+            tls_certificates:
+              - certificate_chain:
+                  filename: /certs/envoy-client.crt
+                private_key:
+                  filename: /certs/envoy-client.key
+            validation_context:
+              trusted_ca:
+                filename: /certs/ca.crt
+              match_subject_alt_names:
+                - exact: gateway
+
+    # Identity JWKS endpoint (TLS, no client cert required because JWKS is mTLS-exempt).
+    - name: identity_jwks
+      type: STRICT_DNS
+      connect_timeout: 2s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: identity_jwks
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: identity
+                      port_value: 8182
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: identity
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+            validation_context:
+              trusted_ca:
+                filename: /certs/ca.crt
+              match_subject_alt_names:
+                - exact: identity
+
+    # Policy-engine ext_authz endpoint (mTLS).
+    - name: policy_engine_authz
+      type: STRICT_DNS
+      connect_timeout: 2s
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: policy_engine_authz
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: policy-engine
+                      port_value: 8181
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: policy-engine
+          common_tls_context:
+            tls_params:
+              tls_minimum_protocol_version: TLSv1_2
+              tls_maximum_protocol_version: TLSv1_3
+            tls_certificates:
+              - certificate_chain:
+                  filename: /certs/envoy-client.crt
+                private_key:
+                  filename: /certs/envoy-client.key
+            validation_context:
+              trusted_ca:
+                filename: /certs/ca.crt
+              match_subject_alt_names:
+                - exact: policy-engine
+
+    # Global rate limit service (gRPC, plaintext).
+    - name: ratelimit
+      type: STRICT_DNS
+      connect_timeout: 2s
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: {}
+      load_assignment:
+        cluster_name: ratelimit
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: ratelimit
+                      port_value: 8081

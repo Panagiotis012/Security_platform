@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-gateway
+  labels:
+    app: gateway
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: edge
+spec:
+  replicas: {{ .Values.gateway.replicaCount }}
+  selector:
+    matchLabels:
+      app: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: gateway
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: {{ .Values.gateway.securityContext.runAsNonRoot }}
+        runAsUser: {{ .Values.gateway.securityContext.runAsUser }}
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: "{{ .Values.gateway.image.repository }}:{{ .Values.gateway.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.gateway.service.httpsPort }}
+              name: https
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.global.nodeEnv }}
+            - name: PORT
+              value: "{{ .Values.gateway.service.httpsPort }}"
+            - name: LOG_LEVEL
+              value: {{ .Values.global.logLevel }}
+            - name: PDP_URL
+              value: "http://{{ .Release.Name }}-policy-engine:{{ .Values.policyEngine.service.port }}"
+            - name: IDENTITY_URL
+              value: "http://{{ .Release.Name }}-identity:{{ .Values.identity.service.port }}"
+            - name: TELEMETRY_URL
+              value: "http://{{ .Release.Name }}-telemetry:{{ .Values.telemetry.service.port }}"
+          resources:
+            {{- toYaml .Values.gateway.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: {{ .Values.gateway.securityContext.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ .Values.gateway.securityContext.allowPrivilegeEscalation }}
+            capabilities:
+              drop: {{ toYaml .Values.gateway.securityContext.capabilities.drop | nindent 16 }}
+              add: {{ toYaml .Values.gateway.securityContext.capabilities.add | nindent 16 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.gateway.service.httpsPort }}
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.gateway.service.httpsPort }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.gateway.tls.enabled }}
+            - name: tls-certs
+              mountPath: /certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        {{- if .Values.gateway.tls.enabled }}
+        - name: tls-certs
+          secret:
+            secretName: {{ .Values.gateway.tls.secretName }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-gateway
+spec:
+  type: {{ .Values.gateway.service.type }}
+  ports:
+    - port: {{ .Values.gateway.service.httpsPort }}
+      targetPort: https
+      protocol: TCP
+      name: https
+  selector:
+    app: gateway
+    app.kubernetes.io/instance: {{ .Release.Name }}
+---
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-gateway-pdb
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

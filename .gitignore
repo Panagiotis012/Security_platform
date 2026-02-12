@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.js.map
+
+# Certificates and keys — NEVER commit secrets
+certs/
+*.key
+*.pem
+*.p12
+
+# Environment files
+.env
+.env.local
+.env.production
+.public.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+
+# Docker volumes
+data/
+
+# Temporary
+tmp/
+.tmp/

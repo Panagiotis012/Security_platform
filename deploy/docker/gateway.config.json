@@ -1,0 +1,327 @@
+{
+  "server": {
+    "port": 8443,
+    "httpPort": 8080,
+    "host": "0.0.0.0",
+    "trustProxy": false
+  },
+  "tls": {
+    "enabled": true,
+    "certPath": "/certs/gateway.crt",
+    "keyPath": "/certs/gateway.key",
+    "minVersion": "TLSv1.2",
+    "honorCipherOrder": true,
+    "sessionTimeout": 300
+  },
+  "internalAuth": {
+    "enabled": true,
+    "allowedSkewSeconds": 60
+  },
+  "adaptiveDefense": {
+    "enabled": true,
+    "scoreWindowMs": 300000,
+    "challengeThreshold": 60,
+    "blockThreshold": 100,
+    "blockDurationMs": 1800000,
+    "abuseIntel": {
+      "enabled": true,
+      "sourceId": "gateway-edge",
+      "signExports": true,
+      "requireSignedImports": true,
+      "signingKeyId": "gateway-abuse-v1"
+    },
+    "profiles": {
+      "auth-edge": {
+        "challengeThreshold": 20,
+        "blockThreshold": 40,
+        "signals": {
+          "authFailure": 15,
+          "rateLimitExceeded": 30,
+          "botFingerprint": 5
+        }
+      },
+      "supply-chain-critical": {
+        "challengeThreshold": 30,
+        "blockThreshold": 60,
+        "signals": {
+          "wafBlock": 60,
+          "forbidden": 10,
+          "botFingerprint": 5
+        }
+      }
+    }
+  },
+  "edgeCache": {
+    "enabled": true,
+    "defaultTtlSeconds": 30,
+    "staleWhileRevalidateSeconds": 15,
+    "varyHeaders": ["accept", "accept-encoding", "accept-language"],
+    "includeQueryString": true,
+    "ignoreQueryParams": ["_", "cacheBust"],
+    "cacheAuthenticated": false,
+    "maxBodyBytes": 262144,
+    "statusCodes": [200],
+    "respectOriginCacheControl": false,
+    "cacheTagHeader": "cache-tag",
+    "maxTagsPerEntry": 64,
+    "maxTagLength": 64,
+    "requestCoalescingEnabled": true,
+    "requestCoalescingWaitMs": 250,
+    "memoryMaxEntries": 50000
+  },
+  "waf": {
+    "enabled": true,
+    "riskScoreThreshold": 50,
+    "challengeDurationMs": 600000,
+    "managedRulesVersion": "v1",
+    "allowedRuleVersions": ["v1"],
+    "ruleSets": {
+      "xss": { "enabled": true, "action": "block" },
+      "sqli": { "enabled": true, "action": "block" },
+      "cmdi": { "enabled": true, "action": "block" },
+      "ssrf": { "enabled": true, "action": "block" },
+      "traversal": { "enabled": true, "action": "block" },
+      "custom": { "enabled": true, "action": "challenge" }
+    },
+    "customRules": []
+    ,
+    "rateRules": [
+      {
+        "id": "rate-auth-login-v1",
+        "version": "v1",
+        "enabled": false,
+        "description": "Protect auth endpoints from bursts",
+        "pathPattern": "^/auth",
+        "methods": ["POST"],
+        "threshold": 20,
+        "windowMs": 60000,
+        "blockDurationMs": 120000,
+        "keyBy": "ip",
+        "action": "challenge",
+        "rolloutPercent": 100
+      }
+    ]
+  },
+  "cors": {
+    "globalAllowedOrigins": ["https://localhost:3000"],
+    "globalAllowedMethods": ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "globalAllowedHeaders": ["Content-Type", "Authorization", "X-Request-Id", "X-Correlation-Id", "X-CSRF-Token"],
+    "globalExposedHeaders": ["X-Correlation-Id"],
+    "globalCredentials": true,
+    "preflightCacheTtl": 600
+  },
+  "jwt": {
+    "jwksUri": "https://identity:8182/.well-known/jwks.json",
+    "issuer": "https://identity.zerotrust.local",
+    "audience": "https://api.zerotrust.local",
+    "algorithms": ["RS256", "ES256"],
+    "maxTokenAgeSeconds": 900,
+    "clockToleranceSeconds": 30,
+    "cookieName": "__Host-session",
+    "headerName": "Authorization",
+    "headerScheme": "Bearer",
+    "cacheEnabled": true,
+    "jwksCacheTtlMs": 600000
+  },
+  "pdp": {
+    "enabled": false,
+    "url": "https://policy-engine:8181",
+    "timeoutMs": 2000,
+    "cacheTtlMs": 30000,
+    "cacheMaxEntries": 10000,
+    "failClosed": true,
+    "mtls": {
+      "enabled": true,
+      "caPath": "/certs/ca.crt",
+      "certPath": "/certs/gateway-client.crt",
+      "keyPath": "/certs/gateway-client.key",
+      "rejectUnauthorized": true
+    },
+    "breakGlassEnabled": false,
+    "breakGlassHeader": "X-Break-Glass"
+  },
+  "upstreams": {
+    "identity": {
+      "name": "identity",
+      "url": "https://identity:8182",
+      "timeoutMs": 30000,
+      "pool": {
+        "enabled": false,
+        "endpoints": [
+          { "url": "https://identity:8182", "weight": 3 }
+        ],
+        "steering": {
+          "policy": "weighted_random",
+          "latencyEwmaAlpha": 0.2,
+          "defaultLatencyMs": 100
+        },
+        "sessionAffinity": {
+          "enabled": false,
+          "source": "cookie",
+          "headerName": "x-zt-affinity-key",
+          "fallbackToIp": true,
+          "cookie": {
+            "name": "__zt_upstream_affinity",
+            "ttlSeconds": 604800,
+            "secure": true,
+            "httpOnly": true,
+            "sameSite": "lax",
+            "path": "/",
+            "secret": "",
+            "previousSecrets": []
+          }
+        },
+        "activeHealthChecks": {
+          "enabled": false,
+          "intervalMs": 10000,
+          "timeoutMs": 2000,
+          "path": "/health",
+          "expectedStatusMin": 200,
+          "expectedStatusMax": 399
+        },
+        "outlierEjection": {
+          "enabled": true,
+          "consecutiveFailuresThreshold": 5,
+          "ejectionDurationMs": 30000,
+          "maxEjectionPercent": 50
+        }
+      },
+      "mtls": {
+        "enabled": true,
+        "caPath": "/certs/ca.crt",
+        "certPath": "/certs/gateway-client.crt",
+        "keyPath": "/certs/gateway-client.key",
+        "rejectUnauthorized": true
+      }
+    },
+    "telemetry": {
+      "name": "telemetry",
+      "url": "https://telemetry:8183",
+      "timeoutMs": 30000,
+      "mtls": {
+        "enabled": true,
+        "caPath": "/certs/ca.crt",
+        "certPath": "/certs/gateway-client.crt",
+        "keyPath": "/certs/gateway-client.key",
+        "rejectUnauthorized": true
+      }
+    },
+    "supply-chain": {
+      "name": "supply-chain",
+      "url": "https://supply-chain:8184",
+      "timeoutMs": 30000,
+      "mtls": {
+        "enabled": true,
+        "caPath": "/certs/ca.crt",
+        "certPath": "/certs/gateway-client.crt",
+        "keyPath": "/certs/gateway-client.key",
+        "rejectUnauthorized": true
+      }
+    }
+  },
+  "routes": [
+    {
+      "path": "/auth",
+      "upstream": "identity",
+      "methods": ["GET", "POST", "OPTIONS"],
+      "authRequired": false,
+      "cors": {
+        "allowedOrigins": ["https://localhost:3000"],
+        "allowedMethods": ["GET", "POST", "OPTIONS"],
+        "allowedHeaders": ["Content-Type", "Authorization", "X-Request-Id", "X-Correlation-Id", "X-CSRF-Token"],
+        "exposedHeaders": ["X-Correlation-Id"],
+        "maxAge": 600,
+        "credentials": true
+      },
+      "rateLimit": {
+        "perIp": { "windowMs": 60000, "maxRequests": 60, "burstMax": 20, "burstWindowMs": 1000 }
+      },
+      "adaptiveProfile": "auth-edge",
+      "wafRuleSets": ["xss", "sqli", "cmdi", "ssrf", "traversal"]
+    },
+    {
+      "path": "/.well-known/jwks.json",
+      "upstream": "identity",
+      "methods": ["GET", "HEAD", "OPTIONS"],
+      "authRequired": false,
+      "edgeCache": {
+        "enabled": true,
+        "ttlSeconds": 60,
+        "staleWhileRevalidateSeconds": 30,
+        "includeQueryString": false,
+        "statusCodes": [200]
+      },
+      "rateLimit": {
+        "perIp": { "windowMs": 60000, "maxRequests": 300, "burstMax": 50, "burstWindowMs": 1000 }
+      }
+    },
+    {
+      "path": "/v1/audit",
+      "upstream": "telemetry",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/alerts",
+      "upstream": "telemetry",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/detections",
+      "upstream": "telemetry",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/metrics",
+      "upstream": "telemetry",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "path": "/v1/sbom",
+      "upstream": "supply-chain",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/provenance",
+      "upstream": "supply-chain",
+      "methods": ["GET", "POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/keys",
+      "upstream": "supply-chain",
+      "methods": ["GET", "OPTIONS"]
+    },
+    {
+      "path": "/v1/keys/rotate",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"],
+      "adaptiveProfile": "supply-chain-critical",
+      "stepUpRequired": true
+    },
+    {
+      "path": "/v1/sign",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"],
+      "adaptiveProfile": "supply-chain-critical"
+    },
+    {
+      "path": "/v1/verify",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/admission",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/runtime",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"]
+    },
+    {
+      "path": "/v1/vuln",
+      "upstream": "supply-chain",
+      "methods": ["POST", "OPTIONS"]
+    }
+  ]
+}

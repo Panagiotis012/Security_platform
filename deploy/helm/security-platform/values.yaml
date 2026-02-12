@@ -1,0 +1,184 @@
+# ============================================================================
+# Security Platform Helm Values — Secure Defaults
+# Override per environment. Relaxing security requires review + justification.
+# ============================================================================
+
+global:
+  imagePullPolicy: IfNotPresent
+  nodeEnv: production
+  logLevel: info
+  logFormat: json
+
+gateway:
+  replicaCount: 2
+  image:
+    repository: security-platform/gateway
+    tag: "1.0.0"
+  service:
+    type: LoadBalancer
+    httpsPort: 8443
+    httpPort: 8080
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 128Mi
+  tls:
+    enabled: true
+    secretName: gateway-tls
+  cors:
+    allowedOrigins: []  # Must be explicitly configured — no wildcards
+  rateLimits:
+    global:
+      windowMs: 60000
+      maxRequests: 100
+    perIdentity:
+      windowMs: 60000
+      maxRequests: 200
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+      add: ["NET_BIND_SERVICE"]
+
+identity:
+  replicaCount: 2
+  image:
+    repository: security-platform/identity
+    tag: "1.0.0"
+  service:
+    type: ClusterIP
+    port: 8182
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 128Mi
+  oidc:
+    issuerUrl: ""       # REQUIRED
+    clientId: ""        # REQUIRED
+    redirectUri: ""     # REQUIRED
+    clientSecretRef:
+      name: identity-oidc-secret
+      key: client-secret
+  tokens:
+    accessTokenTTL: 900        # 15 minutes
+    refreshTokenTTL: 86400     # 24 hours
+    stepUpTTL: 300             # 5 minutes
+  sessions:
+    idleTimeout: 1800          # 30 minutes
+    absoluteTimeout: 43200     # 12 hours
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+policyEngine:
+  replicaCount: 2
+  image:
+    repository: security-platform/policy-engine
+    tag: "1.0.0"
+  service:
+    type: ClusterIP
+    port: 8181
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+  defaultDecision: DENY    # Fail-closed. Do not change.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+telemetry:
+  replicaCount: 2
+  image:
+    repository: security-platform/telemetry
+    tag: "1.0.0"
+  service:
+    type: ClusterIP
+    port: 8183
+  resources:
+    limits:
+      cpu: "1"
+      memory: 512Mi
+    requests:
+      cpu: 250m
+      memory: 128Mi
+  detectionIntervalMs: 30000
+  alerting:
+    webhookUrl: ""
+  retention:
+    auditLogDays: 90
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+supplyChain:
+  replicaCount: 1
+  image:
+    repository: security-platform/supply-chain
+    tag: "1.0.0"
+  service:
+    type: ClusterIP
+    port: 8184
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 64Mi
+  admission:
+    requireSignature: true
+    requireProvenance: true
+    requireSBOM: true
+    blockCriticalVulns: true
+    allowlistedPipelines: []   # Must be configured per org
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: redis-secret
+  master:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 192Mi
+
+networkPolicies:
+  enabled: true  # Enforce network segmentation by default
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

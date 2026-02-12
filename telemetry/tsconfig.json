@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "composite": true,
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "baseUrl": ".",
+    "paths": {
+      "@config/*": ["config/*"],
+      "@audit/*": ["src/audit/*"],
+      "@detection/*": ["src/detection/*"],
+      "@alerting/*": ["src/alerting/*"],
+      "@api/*": ["src/api/*"]
+    },
+    "typeRoots": ["./node_modules/@types"]
+  },
+  "include": ["src/**/*", "config/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"],
+  "references": [{ "path": "../shared" }]
+}

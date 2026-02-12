@@ -1,0 +1,846 @@
+# ============================================================================
+# Security Platform — Docker Compose (Production-Hardened with Monitoring)
+# ============================================================================
+# All services run with security-hardened defaults:
+#   - Non-root users (UID 1000)
+#   - Read-only root filesystems
+#   - Dropped Linux capabilities (ALL dropped)
+#   - Default seccomp profile (do NOT disable)
+#   - Resource limits with no swap
+#   - PID limits
+#   - Isolated internal networks (frontend, backend, monitoring)
+#   - Comprehensive health checks
+#   - JSON logging with labels
+#   - Distributed tracing (Jaeger)
+#   - Metrics collection (Prometheus + Grafana)
+# ============================================================================
+
+x-common-env: &common-env
+  NODE_ENV: production
+  LOG_LEVEL: info
+  LOG_FORMAT: json
+  NODE_EXTRA_CA_CERTS: "/certs/ca.crt"
+  INTERNAL_SHARED_SECRET: "${INTERNAL_SHARED_SECRET:?Set INTERNAL_SHARED_SECRET in deploy/docker/.env}"
+  INTERNAL_AUTH_ENABLED: "true"
+  INTERNAL_AUTH_SKEW_SECONDS: "60"
+  INTERNAL_AUTH_REQUIRE_NONCE: "${INTERNAL_AUTH_REQUIRE_NONCE:-true}"
+  INTERNAL_AUTH_REQUIRE_CALLER: "${INTERNAL_AUTH_REQUIRE_CALLER:-true}"
+  INTERNAL_AUTH_REQUIRE_KEY_ID: "${INTERNAL_AUTH_REQUIRE_KEY_ID:-true}"
+  INTERNAL_AUTH_REPLAY_PROTECTION_ENABLED: "${INTERNAL_AUTH_REPLAY_PROTECTION_ENABLED:-true}"
+  INTERNAL_AUTH_REPLAY_CACHE_MAX_ENTRIES: "${INTERNAL_AUTH_REPLAY_CACHE_MAX_ENTRIES:-50000}"
+  INTERNAL_AUTH_REPLAY_STORE: "${INTERNAL_AUTH_REPLAY_STORE:-redis}"
+  INTERNAL_AUTH_REPLAY_REDIS_REQUIRED: "${INTERNAL_AUTH_REPLAY_REDIS_REQUIRED:-true}"
+  INTERNAL_AUTH_REPLAY_REDIS_PREFIX: "${INTERNAL_AUTH_REPLAY_REDIS_PREFIX:-zt:internal-auth:replay:}"
+  EDGE_CACHE_ENABLED: "${EDGE_CACHE_ENABLED:-true}"
+  EDGE_CACHE_STORE: "${EDGE_CACHE_STORE:-redis}"
+  EDGE_CACHE_REDIS_REQUIRED: "${EDGE_CACHE_REDIS_REQUIRED:-true}"
+  EDGE_CACHE_REDIS_PREFIX: "${EDGE_CACHE_REDIS_PREFIX:-zt:gateway:edge-cache:}"
+  EDGE_CACHE_DEFAULT_TTL_SECONDS: "${EDGE_CACHE_DEFAULT_TTL_SECONDS:-30}"
+  EDGE_CACHE_STALE_WHILE_REVALIDATE_SECONDS: "${EDGE_CACHE_STALE_WHILE_REVALIDATE_SECONDS:-15}"
+  EDGE_CACHE_VARY_HEADERS: "${EDGE_CACHE_VARY_HEADERS:-accept,accept-encoding,accept-language}"
+  EDGE_CACHE_INCLUDE_QUERY_STRING: "${EDGE_CACHE_INCLUDE_QUERY_STRING:-true}"
+  EDGE_CACHE_IGNORE_QUERY_PARAMS: "${EDGE_CACHE_IGNORE_QUERY_PARAMS:-_,cacheBust}"
+  EDGE_CACHE_CACHE_AUTHENTICATED: "${EDGE_CACHE_CACHE_AUTHENTICATED:-false}"
+  EDGE_CACHE_MAX_BODY_BYTES: "${EDGE_CACHE_MAX_BODY_BYTES:-262144}"
+  EDGE_CACHE_STATUS_CODES: "${EDGE_CACHE_STATUS_CODES:-200}"
+  EDGE_CACHE_RESPECT_ORIGIN_CACHE_CONTROL: "${EDGE_CACHE_RESPECT_ORIGIN_CACHE_CONTROL:-false}"
+  EDGE_CACHE_TAG_HEADER: "${EDGE_CACHE_TAG_HEADER:-cache-tag}"
+  EDGE_CACHE_MAX_TAGS_PER_ENTRY: "${EDGE_CACHE_MAX_TAGS_PER_ENTRY:-64}"
+  EDGE_CACHE_MAX_TAG_LENGTH: "${EDGE_CACHE_MAX_TAG_LENGTH:-64}"
+  EDGE_CACHE_REQUEST_COALESCING_ENABLED: "${EDGE_CACHE_REQUEST_COALESCING_ENABLED:-true}"
+  EDGE_CACHE_REQUEST_COALESCING_WAIT_MS: "${EDGE_CACHE_REQUEST_COALESCING_WAIT_MS:-250}"
+  EDGE_CACHE_MEMORY_MAX_ENTRIES: "${EDGE_CACHE_MEMORY_MAX_ENTRIES:-50000}"
+  WAF_ENABLED: "${WAF_ENABLED:-true}"
+  WAF_RISK_SCORE_THRESHOLD: "${WAF_RISK_SCORE_THRESHOLD:-50}"
+  WAF_CHALLENGE_DURATION_MS: "${WAF_CHALLENGE_DURATION_MS:-600000}"
+  WAF_MANAGED_RULES_VERSION: "${WAF_MANAGED_RULES_VERSION:-v1}"
+  WAF_ALLOWED_RULE_VERSIONS: "${WAF_ALLOWED_RULE_VERSIONS:-v1}"
+  WAF_CUSTOM_RULES_JSON: "${WAF_CUSTOM_RULES_JSON:-}"
+  WAF_RATE_RULES_JSON: "${WAF_RATE_RULES_JSON:-}"
+  UPSTREAM_POOLS_JSON: "${UPSTREAM_POOLS_JSON:-}"
+  UPSTREAM_AFFINITY_COOKIE_SECRET: "${UPSTREAM_AFFINITY_COOKIE_SECRET:-}"
+  UPSTREAM_AFFINITY_COOKIE_PREVIOUS_SECRETS: "${UPSTREAM_AFFINITY_COOKIE_PREVIOUS_SECRETS:-}"
+  ADAPTIVE_DEFENSE_ENABLED: "${ADAPTIVE_DEFENSE_ENABLED:-true}"
+  ADAPTIVE_DEFENSE_SCORE_WINDOW_MS: "${ADAPTIVE_DEFENSE_SCORE_WINDOW_MS:-300000}"
+  ADAPTIVE_DEFENSE_BLOCK_THRESHOLD: "${ADAPTIVE_DEFENSE_BLOCK_THRESHOLD:-100}"
+  ADAPTIVE_DEFENSE_BLOCK_DURATION_MS: "${ADAPTIVE_DEFENSE_BLOCK_DURATION_MS:-1800000}"
+  ADAPTIVE_DEFENSE_SCORE_WAF_BLOCK: "${ADAPTIVE_DEFENSE_SCORE_WAF_BLOCK:-50}"
+  ADAPTIVE_DEFENSE_SCORE_RATE_LIMIT: "${ADAPTIVE_DEFENSE_SCORE_RATE_LIMIT:-30}"
+  ADAPTIVE_DEFENSE_SCORE_AUTH_FAILURE: "${ADAPTIVE_DEFENSE_SCORE_AUTH_FAILURE:-10}"
+  ADAPTIVE_DEFENSE_SCORE_FORBIDDEN: "${ADAPTIVE_DEFENSE_SCORE_FORBIDDEN:-5}"
+  ADAPTIVE_DEFENSE_SCORE_BOT_FINGERPRINT: "${ADAPTIVE_DEFENSE_SCORE_BOT_FINGERPRINT:-5}"
+  ADAPTIVE_DEFENSE_STORE: "${ADAPTIVE_DEFENSE_STORE:-redis}"
+  ADAPTIVE_DEFENSE_REDIS_REQUIRED: "${ADAPTIVE_DEFENSE_REDIS_REQUIRED:-true}"
+  ADAPTIVE_DEFENSE_REDIS_PREFIX: "${ADAPTIVE_DEFENSE_REDIS_PREFIX:-zt:gateway:ip-reputation:}"
+  ADAPTIVE_DEFENSE_IP_ALLOWLIST: "${ADAPTIVE_DEFENSE_IP_ALLOWLIST:-}"
+  ADAPTIVE_DEFENSE_CHALLENGE_ENABLED: "${ADAPTIVE_DEFENSE_CHALLENGE_ENABLED:-true}"
+  ADAPTIVE_DEFENSE_CHALLENGE_THRESHOLD: "${ADAPTIVE_DEFENSE_CHALLENGE_THRESHOLD:-60}"
+  ADAPTIVE_DEFENSE_CHALLENGE_DURATION_MS: "${ADAPTIVE_DEFENSE_CHALLENGE_DURATION_MS:-600000}"
+  ADAPTIVE_DEFENSE_CHALLENGE_TOKEN_TTL_MS: "${ADAPTIVE_DEFENSE_CHALLENGE_TOKEN_TTL_MS:-120000}"
+  ADAPTIVE_DEFENSE_CHALLENGE_HEADER: "${ADAPTIVE_DEFENSE_CHALLENGE_HEADER:-x-zt-bot-challenge-token}"
+  ADAPTIVE_DEFENSE_CHALLENGE_SECRET: "${ADAPTIVE_DEFENSE_CHALLENGE_SECRET:-}"
+  ADAPTIVE_DEFENSE_CHALLENGE_STORE: "${ADAPTIVE_DEFENSE_CHALLENGE_STORE:-redis}"
+  ADAPTIVE_DEFENSE_CHALLENGE_REDIS_REQUIRED: "${ADAPTIVE_DEFENSE_CHALLENGE_REDIS_REQUIRED:-true}"
+  ADAPTIVE_DEFENSE_CHALLENGE_REDIS_PREFIX: "${ADAPTIVE_DEFENSE_CHALLENGE_REDIS_PREFIX:-zt:gateway:bot-challenge:}"
+  ADAPTIVE_DEFENSE_PROFILES_JSON: "${ADAPTIVE_DEFENSE_PROFILES_JSON:-}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_ENABLED: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_ENABLED:-true}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_SOURCE_ID: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_SOURCE_ID:-gateway-edge}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_EXPORT_MAX_ENTRIES: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_EXPORT_MAX_ENTRIES:-1000}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_DEFAULT_TTL_SECONDS: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_DEFAULT_TTL_SECONDS:-900}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGN_EXPORTS: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGN_EXPORTS:-true}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_REQUIRE_SIGNED_IMPORTS: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_REQUIRE_SIGNED_IMPORTS:-true}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGNING_KEY_ID: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGNING_KEY_ID:-gateway-abuse-v1}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGNING_SECRET: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_SIGNING_SECRET:-}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_ALLOWED_SOURCES: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_ALLOWED_SOURCES:-gateway-edge}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_ALLOWED_KEY_IDS: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_ALLOWED_KEY_IDS:-gateway-abuse-v1}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_KEYRING: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_KEYRING:-}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_PROTECTION_ENABLED: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_PROTECTION_ENABLED:-true}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_CACHE_MAX_ENTRIES: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_CACHE_MAX_ENTRIES:-50000}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_MAX_SKEW_SECONDS: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_MAX_SKEW_SECONDS:-300}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_STORE: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_STORE:-redis}"
+  ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_REDIS_PREFIX: "${ADAPTIVE_DEFENSE_ABUSE_INTEL_REPLAY_REDIS_PREFIX:-zt:gateway:abuse-intel:replay:}"
+  INTERNAL_MTLS_REQUIRED: "true"
+  INTERNAL_MTLS_CA_PATH: "/certs/ca.crt"
+  # Distributed tracing
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318/v1/traces"
+  OTEL_SERVICE_NAME: "${SERVICE_NAME:-security-platform}"
+  OTEL_TRACES_EXPORTER: "otlp"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 30s
+
+x-security-defaults: &security-defaults
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  read_only: true
+
+x-logging-defaults: &logging-defaults
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+    labels: "service_name,environment"
+
+x-resource-limits-gateway: &resource-limits-gateway
+  limits:
+    cpus: "1.0"
+    memory: 512M
+  reservations:
+    cpus: "0.25"
+    memory: 128M
+
+x-resource-limits-medium: &resource-limits-medium
+  limits:
+    cpus: "1.0"
+    memory: 512M
+  reservations:
+    cpus: "0.25"
+    memory: 128M
+
+x-resource-limits-small: &resource-limits-small
+  limits:
+    cpus: "0.5"
+    memory: 256M
+  reservations:
+    cpus: "0.1"
+    memory: 64M
+
+x-resource-limits-monitoring: &resource-limits-monitoring
+  limits:
+    cpus: "0.75"
+    memory: 384M
+  reservations:
+    cpus: "0.25"
+    memory: 96M
+
+services:
+  # --------------------------------------------------------------------------
+  # Volume Initialization (Fix ownership for non-root services)
+  # --------------------------------------------------------------------------
+  # Docker named volumes are created as root-owned. Because services run as a
+  # non-root UID and drop all Linux capabilities, they cannot chown volumes
+  # themselves. This one-shot init container sets the correct ownership once.
+  volume-init:
+    image: alpine@sha256:a4f4213abb84c497377b8544c81b3564f313746700372ec4fe84653e4fb03805
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        for dir in /data/pdp /data/audit /data/sbom /data/keys; do
+          mkdir -p "$$dir"
+          chown -R 1001:1001 "$$dir"
+        done
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    networks:
+      - backend
+    volumes:
+      - pdp-data:/data/pdp:rw
+      - audit-logs:/data/audit:rw
+      - sbom-store:/data/sbom:rw
+      - supply-chain-keystore:/data/keys:rw
+    restart: "no"
+    logging: *logging-defaults
+    labels:
+      service_name: "volume-init"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Edge Proxy (Envoy)
+  # --------------------------------------------------------------------------
+  envoy:
+    image: envoyproxy/envoy@sha256:a3641f7c7b4bb6c069791ac79b878b02138b7771e00a58295f39adfa4cab81e0
+    command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "-l", "info"]
+    ports:
+      - "8443:8443"    # Public HTTPS
+      - "8080:8080"    # Public HTTP -> HTTPS redirect
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/envoy.crt:/certs/envoy.crt:ro
+      - ../../certs/envoy.key:/certs/envoy.key:ro
+      - ../../certs/envoy-client.crt:/certs/envoy-client.crt:ro
+      - ../../certs/envoy-client.key:/certs/envoy-client.key:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      gateway:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+      policy-engine:
+        condition: service_healthy
+      ratelimit:
+        condition: service_started
+      opa:
+        condition: service_started
+    deploy:
+      resources: *resource-limits-gateway
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "envoy"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Edge Rate Limit Service (Envoy Global Rate Limit, gRPC)
+  # --------------------------------------------------------------------------
+  ratelimit:
+    image: envoyproxy/ratelimit@sha256:508ff08079a2f9257a5c87699cfac69bb7f897ac8e98dcf1cd04f6ce02885e7b
+    command: ["/bin/ratelimit"]
+    environment:
+      LOG_LEVEL: info
+      USE_STATSD: "false"
+      # Redis (TCP) backing store
+      REDIS_SOCKET_TYPE: "tcp"
+      REDIS_TYPE: "SINGLE"
+      REDIS_URL: "redis:6379"
+      REDIS_AUTH: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/docker/.env}"
+      # Runtime config (descriptor tree)
+      RUNTIME_ROOT: "/data"
+      RUNTIME_SUBDIRECTORY: "ratelimit"
+      PORT: "8080"
+      GRPC_PORT: "8081"
+    volumes:
+      - ./ratelimit:/data/ratelimit:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources: *resource-limits-small
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=32M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "ratelimit"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Policy Language Engine (OPA)
+  # --------------------------------------------------------------------------
+  opa:
+    image: openpolicyagent/opa@sha256:92044e8f8e2d1ca6a62d8f40007f4d2045893fc46b18f3a5392f196f0b37880b
+    command: ["run", "--server", "--addr", "0.0.0.0:8185", "--log-format=json", "/policies/policy.rego"]
+    volumes:
+      - ./opa:/policies:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    deploy:
+      resources: *resource-limits-small
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=32M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "opa"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Gateway (Internal Only; mTLS from Envoy)
+  # --------------------------------------------------------------------------
+  gateway:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile.gateway
+    environment:
+      <<: *common-env
+      SERVICE_NAME: "gateway"
+      PORT: "8443"
+      HTTP_PORT: "8080"
+      GATEWAY_CONFIG: "/app/gateway.config.json"
+      NODE_EXTRA_CA_CERTS: "/certs/ca.crt"
+      PDP_URL: "https://policy-engine:8181"
+      IDENTITY_URL: "https://identity:8182"
+      TELEMETRY_URL: "https://telemetry:8183"
+      TLS_CERT_PATH: "/certs/gateway.crt"
+      TLS_KEY_PATH: "/certs/gateway.key"
+      TLS_CA_PATH: "/certs/ca.crt"
+      # Lock down the public listener behind Envoy.
+      GATEWAY_MTLS_REQUIRED: "true"
+      GATEWAY_MTLS_EXPECTED_CN: "envoy"
+      GATEWAY_TRUST_XFF_MTLS_CN: "envoy"
+      # Restrict control-plane endpoints (/internal/*) to telemetry only.
+      GATEWAY_INTERNAL_MTLS_ALLOWED_CLIENT_CNS: "telemetry"
+      TRUSTED_PROXIES: ""
+      CORS_ALLOWED_ORIGINS: "https://localhost:3000"
+      # Redis-backed enforcement state (required in production)
+      GATEWAY_REDIS_REQUIRED: "true"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "1"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/docker/.env}"
+      # Internal-only metrics server (not exposed on the public listener)
+      GATEWAY_METRICS_ENABLED: "true"
+      GATEWAY_METRICS_PORT: "9095"
+      GATEWAY_METRICS_HOST: "0.0.0.0"
+      INTERNAL_AUTH_CALLER_ID: "gateway"
+      INTERNAL_AUTH_CALLER_KEY_ID: "gateway-v1"
+      INTERNAL_AUTH_ALLOWED_CALLERS: "telemetry"
+      INTERNAL_AUTH_ALLOWED_KEY_IDS: "telemetry-v1"
+      INTERNAL_AUTH_EXPECTED_AUDIENCE: "gateway"
+      INTERNAL_AUTH_KEYRING: "telemetry-v1:${INTERNAL_SHARED_SECRET}"
+      PDP_INTERNAL_AUDIENCE: "policy-engine"
+    volumes:
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/gateway.crt:/certs/gateway.crt:ro
+      - ../../certs/gateway.key:/certs/gateway.key:ro
+      - ../../certs/gateway-client.crt:/certs/gateway-client.crt:ro
+      - ../../certs/gateway-client.key:/certs/gateway-client.key:ro
+      - ./gateway.config.json:/app/gateway.config.json:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      policy-engine:
+        condition: service_healthy
+      identity:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/healthz', r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources: *resource-limits-gateway
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "gateway"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Identity & Authorization Plane
+  # --------------------------------------------------------------------------
+  identity:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile.identity
+    environment:
+      <<: *common-env
+      SERVICE_NAME: "identity"
+      PORT: "8182"
+      IDENTITY_TLS_ENABLED: "true"
+      IDENTITY_TLS_CERT_PATH: "/certs/identity.crt"
+      IDENTITY_TLS_KEY_PATH: "/certs/identity.key"
+      IDENTITY_TLS_CA_PATH: "/certs/ca.crt"
+      # Only allow gateway + telemetry (response hooks) to call the plane directly.
+      INTERNAL_MTLS_ALLOWED_CLIENT_CNS: "gateway,telemetry"
+      PDP_URL: "https://policy-engine:8181"
+      TELEMETRY_URL: "https://telemetry:8183"
+      CSRF_SECRET: "${CSRF_SECRET:?Set CSRF_SECRET in deploy/docker/.env}"
+      TOKEN_ISSUER: "${TOKEN_ISSUER:-https://identity.zerotrust.local}"
+      TOKEN_AUDIENCE: "${TOKEN_AUDIENCE:-https://api.zerotrust.local}"
+      TOKEN_ALGORITHM: "${TOKEN_ALGORITHM:-ES256}"
+      # Dev-only helper: mint tokens for local testing without external OIDC.
+      # Keep disabled in real deployments.
+      DEV_TOKEN_ISSUER_ENABLED: "${DEV_TOKEN_ISSUER_ENABLED:-false}"
+      DEV_TOKEN_ISSUER_SECRET: "${DEV_TOKEN_ISSUER_SECRET:-}"
+      ALLOW_DEV_TOKEN_ISSUER_IN_PRODUCTION: "${ALLOW_DEV_TOKEN_ISSUER_IN_PRODUCTION:-false}"
+      # Redis-backed sessions + token revocation/versioning (required in production)
+      IDENTITY_REDIS_REQUIRED: "true"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "1"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/docker/.env}"
+      OIDC_GOOGLE_ENABLED: "${OIDC_GOOGLE_ENABLED:-false}"
+      OIDC_GOOGLE_CLIENT_ID: "${OIDC_GOOGLE_CLIENT_ID:-}"
+      OIDC_GOOGLE_CLIENT_SECRET: "${OIDC_GOOGLE_CLIENT_SECRET:-}"
+      OIDC_MICROSOFT_ENABLED: "${OIDC_MICROSOFT_ENABLED:-false}"
+      OIDC_MICROSOFT_CLIENT_ID: "${OIDC_MICROSOFT_CLIENT_ID:-}"
+      OIDC_MICROSOFT_CLIENT_SECRET: "${OIDC_MICROSOFT_CLIENT_SECRET:-}"
+      OIDC_KEYCLOAK_ENABLED: "${OIDC_KEYCLOAK_ENABLED:-false}"
+      OIDC_KEYCLOAK_ISSUER: "${OIDC_KEYCLOAK_ISSUER:-}"
+      OIDC_KEYCLOAK_CLIENT_ID: "${OIDC_KEYCLOAK_CLIENT_ID:-}"
+      OIDC_KEYCLOAK_CLIENT_SECRET: "${OIDC_KEYCLOAK_CLIENT_SECRET:-}"
+      IDENTITY_EXTERNAL_BASE_URL: "https://localhost:8443"
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "8182"
+      METRICS_PATH: "/metrics"
+      INTERNAL_AUTH_ALLOWED_CALLERS: "gateway,telemetry"
+      INTERNAL_AUTH_ALLOWED_KEY_IDS: "gateway-v1,telemetry-v1"
+      INTERNAL_AUTH_EXPECTED_AUDIENCE: "identity"
+      INTERNAL_AUTH_KEYRING: "gateway-v1:${INTERNAL_SHARED_SECRET},telemetry-v1:${INTERNAL_SHARED_SECRET}"
+    volumes:
+      - ../../certs/keys:/keys:ro
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/identity.crt:/certs/identity.crt:ro
+      - ../../certs/identity.key:/certs/identity.key:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+      opa:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({ hostname: 'localhost', port: 8182, path: '/healthz', rejectUnauthorized: false }, r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources: *resource-limits-medium
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "identity"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Policy Decision Point (PDP)
+  # --------------------------------------------------------------------------
+  policy-engine:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile.policy-engine
+    environment:
+      <<: *common-env
+      SERVICE_NAME: "policy-engine"
+      PORT: "8181"
+      PDP_STORE: "file"
+      PDP_DATA_DIR: "/data/pdp"
+      PDP_POLICY_STORE_PATH: "/data/pdp/policies.json"
+      PDP_DECISION_LOG_PATH: "/data/pdp/decisions.jsonl"
+      PDP_TLS_ENABLED: "true"
+      PDP_TLS_CERT_PATH: "/certs/policy-engine.crt"
+      PDP_TLS_KEY_PATH: "/certs/policy-engine.key"
+      PDP_TLS_CA_PATH: "/certs/ca.crt"
+      # Only allow Envoy (ext_authz) + gateway (optional PDP client) to call this plane.
+      INTERNAL_MTLS_ALLOWED_CLIENT_CNS: "envoy,gateway"
+      TELEMETRY_URL: "https://telemetry:8183"
+      # Envoy ext_authz -> policy-engine -> OPA
+      OPA_URL: "http://opa:8185"
+      PDP_EXT_AUTHZ_EXPECTED_CN: "envoy"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/1"
+      PDP_ADMIN_JWT_SECRET: "${PDP_ADMIN_JWT_SECRET:?Set PDP_ADMIN_JWT_SECRET in deploy/docker/.env}"
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "8181"
+      METRICS_PATH: "/metrics"
+      INTERNAL_AUTH_ALLOWED_CALLERS: "gateway"
+      INTERNAL_AUTH_ALLOWED_KEY_IDS: "gateway-v1"
+      INTERNAL_AUTH_EXPECTED_AUDIENCE: "policy-engine"
+      INTERNAL_AUTH_KEYRING: "gateway-v1:${INTERNAL_SHARED_SECRET}"
+    volumes:
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/policy-engine.crt:/certs/policy-engine.crt:ro
+      - ../../certs/policy-engine.key:/certs/policy-engine.key:ro
+      - pdp-data:/data/pdp:rw
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({ hostname: 'localhost', port: 8181, path: '/healthz', rejectUnauthorized: false }, r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources: *resource-limits-small
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=32M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "policy-engine"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Telemetry & Detection Plane
+  # --------------------------------------------------------------------------
+  telemetry:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile.telemetry
+    environment:
+      <<: *common-env
+      SERVICE_NAME: "telemetry"
+      PORT: "8183"
+      TELEMETRY_TLS_ENABLED: "true"
+      TELEMETRY_TLS_CERT_PATH: "/certs/telemetry.crt"
+      TELEMETRY_TLS_KEY_PATH: "/certs/telemetry.key"
+      TELEMETRY_TLS_CA_PATH: "/certs/ca.crt"
+      # Only allow gateway to call the telemetry plane.
+      INTERNAL_MTLS_ALLOWED_CLIENT_CNS: "gateway"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/2"
+      # Closed-loop incident response: telemetry -> enforce (gateway + identity)
+      GATEWAY_SERVICE_URL: "https://gateway:8443"
+      IDENTITY_SERVICE_URL: "https://identity:8182"
+      HOOK_REQUEST_TIMEOUT_MS: "5000"
+      DETECTION_INTERVAL: "30"
+      ALERT_WEBHOOK_URL: "${ALERT_WEBHOOK_URL:-}"
+      ALERT_CRITICAL_WEBHOOK: "${ALERT_CRITICAL_WEBHOOK:-}"
+      ALERT_HIGH_WEBHOOK: "${ALERT_HIGH_WEBHOOK:-}"
+      LOG_RETENTION_DAYS: "90"
+      AUDIT_STORE: "file"
+      AUDIT_STORE_PATH: "/data/audit/audit.jsonl"
+      AUDIT_FSYNC: "true"
+      DETECTION_RULES_PATH: "/config/detection-rules.json"
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "8183"
+      METRICS_PATH: "/metrics"
+      INTERNAL_AUTH_CALLER_ID: "telemetry"
+      INTERNAL_AUTH_CALLER_KEY_ID: "telemetry-v1"
+      INTERNAL_AUTH_ALLOWED_CALLERS: "gateway"
+      INTERNAL_AUTH_ALLOWED_KEY_IDS: "gateway-v1"
+      INTERNAL_AUTH_EXPECTED_AUDIENCE: "telemetry"
+      INTERNAL_AUTH_KEYRING: "gateway-v1:${INTERNAL_SHARED_SECRET}"
+      HOOK_IDENTITY_INTERNAL_AUDIENCE: "identity"
+    volumes:
+      - audit-logs:/data/audit:rw
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/telemetry.crt:/certs/telemetry.crt:ro
+      - ../../certs/telemetry.key:/certs/telemetry.key:ro
+      - ./config/detection-rules.json:/config/detection-rules.json:ro
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({ hostname: 'localhost', port: 8183, path: '/healthz', rejectUnauthorized: false }, r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources: *resource-limits-medium
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "telemetry"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Supply Chain & Deployment Integrity
+  # --------------------------------------------------------------------------
+  supply-chain:
+    build:
+      context: ../../
+      dockerfile: deploy/docker/Dockerfile.supply-chain
+    environment:
+      <<: *common-env
+      SERVICE_NAME: "supply-chain"
+      PORT: "8184"
+      SUPPLY_CHAIN_TLS_ENABLED: "true"
+      SUPPLY_CHAIN_TLS_CERT_PATH: "/certs/supply-chain.crt"
+      SUPPLY_CHAIN_TLS_KEY_PATH: "/certs/supply-chain.key"
+      SUPPLY_CHAIN_TLS_CA_PATH: "/certs/ca.crt"
+      # Only allow gateway to call the supply-chain plane.
+      INTERNAL_MTLS_ALLOWED_CLIENT_CNS: "gateway"
+      TELEMETRY_URL: "https://telemetry:8183"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/3"
+      # Persist signing keys across restarts (encrypted at rest in the volume).
+      SUPPLY_CHAIN_KEYSTORE_ENABLED: "true"
+      SUPPLY_CHAIN_KEYSTORE_PATH: "/data/keys/keystore.json"
+      SUPPLY_CHAIN_KEYSTORE_MASTER_KEY: "${SUPPLY_CHAIN_KEYSTORE_MASTER_KEY:?Set SUPPLY_CHAIN_KEYSTORE_MASTER_KEY in deploy/docker/.env}"
+      SUPPLY_CHAIN_REQUEST_TIMEOUT_MS: "30000"
+      METRICS_ENABLED: "true"
+      METRICS_PORT: "8184"
+      METRICS_PATH: "/metrics"
+      INTERNAL_AUTH_ALLOWED_CALLERS: "gateway"
+      INTERNAL_AUTH_ALLOWED_KEY_IDS: "gateway-v1"
+      INTERNAL_AUTH_EXPECTED_AUDIENCE: "supply-chain"
+      INTERNAL_AUTH_KEYRING: "gateway-v1:${INTERNAL_SHARED_SECRET}"
+    volumes:
+      - ../../certs/keys:/keys:ro
+      - ../../certs/ca.crt:/certs/ca.crt:ro
+      - ../../certs/supply-chain.crt:/certs/supply-chain.crt:ro
+      - ../../certs/supply-chain.key:/certs/supply-chain.key:ro
+      - sbom-store:/data/sbom:rw
+      - supply-chain-keystore:/data/keys:rw
+    user: "1001:1001"
+    group_add:
+      - "${HOST_GID:-1001}"
+    networks:
+      - backend
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('https').get({ hostname: 'localhost', port: 8184, path: '/healthz', rejectUnauthorized: false }, r => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources: *resource-limits-small
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=32M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "supply-chain"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Infrastructure: Redis (session/cache store)
+  # --------------------------------------------------------------------------
+  redis:
+    image: redis@sha256:02f2cc4882f8bf87c79a220ac958f58c700bdec0dfb9b9ea61b62fb0e8f1bfcf
+    user: "1000:1000"
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+      --dir /data
+      --protected-mode yes
+      --requirepass "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/docker/.env}"
+      --rename-command FLUSHALL ""
+      --rename-command FLUSHDB ""
+      --rename-command DEBUG ""
+      --rename-command CONFIG ""
+      --rename-command SHUTDOWN ""
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in deploy/docker/.env}", "ping"]
+      <<: *healthcheck-defaults
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 192M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    <<: *security-defaults
+    tmpfs:
+      - /data:size=128M,uid=1000,gid=1000,mode=1700,noexec,nosuid,nodev
+      - /tmp:size=32M,uid=1000,gid=1000,mode=1700,noexec,nosuid,nodev
+      - /run:size=16M,uid=1000,gid=1000,mode=1700,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "redis"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Jaeger (Distributed Tracing)
+  # --------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one@sha256:ab6f1a1f0fb49ea08bcd19f6b84f6081d0d44b364b6de148e1798eb5816bacac
+    container_name: jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      COLLECTOR_OTLP_GRPC_HOST_PORT: "0.0.0.0:4317"
+      COLLECTOR_OTLP_HTTP_HOST_PORT: "0.0.0.0:4318"
+    ports:
+      - "127.0.0.1:6831:6831/udp"
+      - "127.0.0.1:6832:6832/udp"
+      - "127.0.0.1:5778:5778"
+      - "127.0.0.1:16686:16686"  # Jaeger UI (localhost only)
+      - "127.0.0.1:14268:14268"
+      - "127.0.0.1:4317:4317"    # OTLP receiver (localhost only)
+      - "127.0.0.1:4318:4318"    # OTLP receiver (HTTP, localhost only)
+    networks:
+      - backend
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:14269/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources: *resource-limits-monitoring
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "jaeger"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Prometheus (Metrics Collection)
+  # --------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus@sha256:1f0f50f06acaceb0f5670d2c8a658a599affe7b0d8e78b898c1035653849a702
+    container_name: prometheus
+    # Prometheus needs write access to its TSDB volume. Docker Desktop often
+    # creates local volumes as `nobody:nobody`; match that without granting caps.
+    user: "65534:65534"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus:rw
+    networks:
+      - backend
+      - monitoring
+    depends_on:
+      - gateway
+      - identity
+      - policy-engine
+      - telemetry
+      - supply-chain
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources: *resource-limits-monitoring
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "prometheus"
+      environment: "production"
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Grafana (Visualization & Dashboards)
+  # --------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana@sha256:ba93c9d192e58b23e064c7f501d453426ccf4a85065bf25b705ab1e98602bfb1
+    container_name: grafana
+    user: "1000:1000"
+    environment:
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in deploy/docker/.env}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana:rw
+      - ./provisioning/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./provisioning/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources: *resource-limits-monitoring
+    <<: *security-defaults
+    tmpfs:
+      - /tmp:size=64M,noexec,nosuid,nodev
+    logging: *logging-defaults
+    labels:
+      service_name: "grafana"
+      environment: "production"
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true   # No external access to backend network
+  monitoring:
+    driver: bridge
+    internal: true   # No external access to monitoring network
+
+volumes:
+  audit-logs:
+    driver: local
+  pdp-data:
+    driver: local
+  sbom-store:
+    driver: local
+  supply-chain-keystore:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

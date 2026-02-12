@@ -1,0 +1,16 @@
+apiVersion: v2
+name: security-platform
+description: Zero Trust Security Platform — Gateway, Identity, Policy Engine, Telemetry, Supply Chain
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - security
+  - zero-trust
+  - gateway
+  - policy-engine
+  - identity
+  - telemetry
+  - supply-chain
+maintainers:
+  - name: Security Platform Team

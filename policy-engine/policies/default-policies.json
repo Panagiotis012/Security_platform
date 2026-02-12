@@ -1,0 +1,216 @@
+{
+  "description": "Default policy set for the Zero Trust security platform. These policies establish baseline security posture with fail-closed semantics.",
+  "version": "1.0.0",
+  "policies": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "version": 1,
+      "name": "Allow health check endpoints",
+      "description": "Health and readiness endpoints are publicly accessible without authentication",
+      "effect": "ALLOW",
+      "actions": ["health:check", "health:ready", "health:metrics"],
+      "resources": ["system:health", "system:ready", "system:metrics", "system:*"],
+      "priority": 900,
+      "enabled": true,
+      "metadata": {
+        "category": "infrastructure",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "version": 1,
+      "name": "Admin full access to policy management",
+      "description": "Users with the admin role have full access to create, update, and delete policies",
+      "effect": "ALLOW",
+      "subjects": {
+        "roles": ["admin", "pdp:admin", "super-admin"]
+      },
+      "actions": ["policy:create", "policy:read", "policy:update", "policy:delete", "policy:*"],
+      "resources": ["policy:*", "decision-log:*"],
+      "priority": 800,
+      "enabled": true,
+      "metadata": {
+        "category": "administration",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000003",
+      "version": 1,
+      "name": "Deny admin routes for non-admins",
+      "description": "Explicitly deny access to admin routes for anyone without admin role",
+      "effect": "DENY",
+      "subjects": {
+        "roles": ["user", "viewer", "manager"]
+      },
+      "actions": ["policy:create", "policy:update", "policy:delete", "admin:*"],
+      "resources": ["policy:*", "admin:*"],
+      "priority": 850,
+      "enabled": true,
+      "metadata": {
+        "category": "administration",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000004",
+      "version": 1,
+      "name": "Authenticated users can read resources",
+      "description": "Any authenticated user (with at least viewer role) can read non-admin resources",
+      "effect": "ALLOW",
+      "subjects": {
+        "roles": ["viewer", "user", "manager", "admin"]
+      },
+      "actions": ["resource:read", "resource:list", "resource:get"],
+      "resources": ["resource:*", "document:*", "project:*"],
+      "priority": 500,
+      "enabled": true,
+      "metadata": {
+        "category": "general-access",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000005",
+      "version": 1,
+      "name": "Users can write resources",
+      "description": "Users with user role or higher can create and update resources",
+      "effect": "ALLOW",
+      "subjects": {
+        "roles": ["user", "manager", "admin"]
+      },
+      "actions": ["resource:create", "resource:update", "resource:write"],
+      "resources": ["resource:*", "document:*", "project:*"],
+      "priority": 500,
+      "enabled": true,
+      "metadata": {
+        "category": "general-access",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000006",
+      "version": 1,
+      "name": "High-risk actions require step-up authentication",
+      "description": "Delete, transfer, and export actions on sensitive resources require step-up auth level >= 2",
+      "effect": "DENY",
+      "actions": ["resource:delete", "resource:transfer", "resource:export", "account:delete", "data:export"],
+      "resources": ["**"],
+      "conditions": {
+        "type": "or",
+        "conditions": [
+          {
+            "type": "single",
+            "condition": {
+              "operator": "NumericLessThan",
+              "field": "environment.stepUpLevel",
+              "value": 2
+            }
+          },
+          {
+            "type": "not",
+            "condition": {
+              "type": "single",
+              "condition": {
+                "operator": "NumericGreaterThan",
+                "field": "environment.stepUpLevel",
+                "value": 0
+              }
+            }
+          }
+        ]
+      },
+      "priority": 950,
+      "enabled": true,
+      "metadata": {
+        "category": "high-risk",
+        "managed": "true",
+        "requiresStepUp": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000007",
+      "version": 1,
+      "name": "Allow high-risk actions with step-up auth",
+      "description": "Allow delete/transfer/export when user has step-up auth level >= 2 and appropriate role",
+      "effect": "ALLOW",
+      "subjects": {
+        "roles": ["manager", "admin"]
+      },
+      "actions": ["resource:delete", "resource:transfer", "resource:export"],
+      "resources": ["resource:*", "document:*", "project:*"],
+      "conditions": {
+        "type": "single",
+        "condition": {
+          "operator": "NumericGreaterThan",
+          "field": "environment.stepUpLevel",
+          "value": 1
+        }
+      },
+      "priority": 700,
+      "enabled": true,
+      "metadata": {
+        "category": "high-risk",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000008",
+      "version": 1,
+      "name": "Block requests from private/internal networks only for external APIs",
+      "description": "External API resources can only be accessed from allowed IP ranges",
+      "effect": "DENY",
+      "actions": ["**"],
+      "resources": ["external-api:*"],
+      "conditions": {
+        "type": "single",
+        "condition": {
+          "operator": "NotIpAddress",
+          "field": "environment.ip",
+          "value": "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+        }
+      },
+      "priority": 950,
+      "enabled": true,
+      "metadata": {
+        "category": "network-security",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000009",
+      "version": 1,
+      "name": "Users can manage their own profile",
+      "description": "Authenticated users can read and update their own profile",
+      "effect": "ALLOW",
+      "subjects": {
+        "roles": ["viewer", "user", "manager", "admin"]
+      },
+      "actions": ["profile:read", "profile:update"],
+      "resources": ["profile:*"],
+      "priority": 600,
+      "enabled": true,
+      "metadata": {
+        "category": "self-service",
+        "managed": "true"
+      }
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "version": 1,
+      "name": "Default deny catch-all",
+      "description": "FAIL-CLOSED: Any request not explicitly allowed by another policy is denied. This is the foundation of Zero Trust.",
+      "effect": "DENY",
+      "actions": ["**"],
+      "resources": ["**"],
+      "priority": 0,
+      "enabled": true,
+      "metadata": {
+        "category": "default",
+        "managed": "true",
+        "description": "Zero Trust catch-all deny policy"
+      }
+    }
+  ]
+}

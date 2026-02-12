@@ -1,0 +1,30 @@
+{
+  # Public ACME account email (Let's Encrypt).
+  email {$ACME_EMAIL}
+
+  # Run Caddy on high ports inside the container so it can run as non-root.
+  # The Docker publish mappings expose 80->8080 and 443->8443.
+  http_port 8080
+  https_port 8443
+
+  # Disable the admin API inside the container (defense-in-depth).
+  admin off
+}
+
+{$PUBLIC_DOMAIN} {
+  encode zstd gzip
+
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "no-referrer"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+  }
+
+  # Envoy remains the L7 policy enforcement point (JWT authn + ext_authz).
+  reverse_proxy envoy:8080 {
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Forwarded-Host {host}
+  }
+}

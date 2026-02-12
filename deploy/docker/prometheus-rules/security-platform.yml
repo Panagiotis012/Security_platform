@@ -1,0 +1,112 @@
+groups:
+  - name: security-platform.rules
+    rules:
+      - alert: SecurityPlatformServiceDown
+        expr: up{job=~"gateway|identity|policy-engine|telemetry|supply-chain|envoy|opa|redis-exporter|prometheus|alertmanager|jaeger|node-exporter|blackbox-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} (instance {{ $labels.instance }}) for 2 minutes."
+
+      - alert: SecurityPlatformPublicEndpointProbeFailed
+        expr: probe_success{job="blackbox"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Public endpoint probe failed"
+          description: "Blackbox probe failed for {{ $labels.instance }} for 2 minutes."
+
+      - alert: SecurityPlatformPublicTlsCertExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) < 1209600
+        for: 30m
+        labels:
+          severity: high
+        annotations:
+          summary: "TLS certificate expiring soon"
+          description: "TLS cert for {{ $labels.instance }} expires in less than 14 days."
+
+      - alert: SecurityPlatformGatewayHigh5xxRate
+        expr: |
+          (
+            sum(rate(http_requests_total{service="gateway",status_code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="gateway"}[5m]))
+          ) > 0.02
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "Gateway 5xx rate is high"
+          description: "Gateway 5xx ratio > 2% for 10 minutes."
+
+      - alert: SecurityPlatformDetectionsHighOrCritical
+        expr: increase(detection_alerts_total{severity=~"high|critical"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: "Security detections triggered (high/critical)"
+          description: "Telemetry recorded high/critical detection alerts in the last 5 minutes."
+
+      - alert: SecurityPlatformBreakGlassActivated
+        expr: increase(pdp_failures_total{service="gateway",outcome="break_glass_allow"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Break-glass activated in gateway"
+          description: "Gateway break-glass was used (PDP failure fallback). Treat as an incident until explained."
+
+      - alert: SecurityPlatformPdpFailClosed
+        expr: increase(pdp_failures_total{service="gateway",outcome="fail_closed_deny"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: high
+        annotations:
+          summary: "PDP unreachable (fail-closed) in gateway"
+          description: "Gateway cannot reach PDP and is failing closed (503/deny) for at least 5 minutes."
+
+      - alert: SecurityPlatformWafBlockSpike
+        expr: sum(increase(waf_blocks_total{service="gateway"}[5m])) > 50
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: "WAF blocks spiking"
+          description: "Gateway WAF blocked more than 50 requests in 5 minutes."
+
+      - alert: SecurityPlatformNormalizationBlockSpike
+        expr: sum(increase(normalization_blocks_total{service="gateway"}[5m])) > 50
+        for: 0m
+        labels:
+          severity: high
+        annotations:
+          summary: "Normalization blocks spiking"
+          description: "Gateway normalization blocked more than 50 requests in 5 minutes (possible scan/smuggling attempt)."
+
+      - alert: SecurityPlatformHostDiskLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+          ) < 0.10
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "Host disk space is low"
+          description: "Less than 10% disk space available on / for 10 minutes."
+
+      - alert: SecurityPlatformHostMemoryHigh
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.90
+        for: 10m
+        labels:
+          severity: high
+        annotations:
+          summary: "Host memory usage is high"
+          description: "More than 90% memory used for 10 minutes."

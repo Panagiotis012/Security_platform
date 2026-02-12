@@ -1,0 +1,2 @@
+chunk_index,chunk_seconds,soak_status,regression_status,chunk_report,chunk_log
+1,20,PASS,SKIP,/Users/Apple/Desktop/Security_platform/artifacts/soak/longrun-20260211T194004Z-chunk-1.json,/Users/Apple/Desktop/Security_platform/artifacts/soak/longrun-20260211T194004Z-chunk-1.log

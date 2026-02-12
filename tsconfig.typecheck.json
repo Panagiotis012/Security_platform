@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./shared" },
+    { "path": "./gateway" },
+    { "path": "./identity" },
+    { "path": "./policy-engine" },
+    { "path": "./telemetry" },
+    { "path": "./supply-chain" }
+  ]
+}
+

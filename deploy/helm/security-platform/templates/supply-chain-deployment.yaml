@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-supply-chain
+  labels:
+    app: supply-chain
+    app.kubernetes.io/name: supply-chain
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: integrity
+spec:
+  replicas: {{ .Values.supplyChain.replicaCount }}
+  selector:
+    matchLabels:
+      app: supply-chain
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: supply-chain
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: supply-chain
+          image: "{{ .Values.supplyChain.image.repository }}:{{ .Values.supplyChain.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.supplyChain.service.port }}
+              name: http
+          env:
+            - name: NODE_ENV
+              value: {{ .Values.global.nodeEnv }}
+            - name: PORT
+              value: "{{ .Values.supplyChain.service.port }}"
+            - name: LOG_LEVEL
+              value: {{ .Values.global.logLevel }}
+            - name: TELEMETRY_URL
+              value: "http://{{ .Release.Name }}-telemetry:{{ .Values.telemetry.service.port }}"
+            - name: REQUIRE_SIGNATURE
+              value: "{{ .Values.supplyChain.admission.requireSignature }}"
+            - name: REQUIRE_PROVENANCE
+              value: "{{ .Values.supplyChain.admission.requireProvenance }}"
+            - name: REQUIRE_SBOM
+              value: "{{ .Values.supplyChain.admission.requireSBOM }}"
+            - name: BLOCK_CRITICAL_VULNS
+              value: "{{ .Values.supplyChain.admission.blockCriticalVulns }}"
+          resources:
+            {{- toYaml .Values.supplyChain.resources | nindent 12 }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.supplyChain.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.supplyChain.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: signing-keys
+              mountPath: /keys
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: signing-keys
+          secret:
+            secretName: supply-chain-signing-keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-supply-chain
+spec:
+  type: {{ .Values.supplyChain.service.type }}
+  ports:
+    - port: {{ .Values.supplyChain.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: supply-chain
+    app.kubernetes.io/instance: {{ .Release.Name }}

@@ -1,0 +1,24 @@
+domain: zt-edge
+
+# Descriptor tree for the Envoy global rate limit service.
+# Keys must match the `actions` configured in Envoy.
+
+descriptors:
+  # Authentication endpoints are high risk (credential stuffing / brute force).
+  - key: generic_key
+    value: auth
+    descriptors:
+      - key: remote_address
+        rate_limit:
+          unit: minute
+          requests_per_unit: 120
+
+  # Default API traffic.
+  - key: generic_key
+    value: api
+    descriptors:
+      - key: remote_address
+        rate_limit:
+          unit: minute
+          requests_per_unit: 600
+

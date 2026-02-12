@@ -1,0 +1,63 @@
+name: dast
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate Secrets
+        run: |
+          echo "CSRF_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "PDP_ADMIN_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "INTERNAL_SHARED_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "REDIS_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "GRAFANA_PASSWORD=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "SUPPLY_CHAIN_KEYSTORE_MASTER_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEV_TOKEN_ISSUER_ENABLED=false" >> "$GITHUB_ENV"
+          echo "DEV_TOKEN_ISSUER_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Generate Dev Certs
+        run: bash scripts/generate-certs.sh
+
+      - name: Start Stack (Docker Compose)
+        run: docker compose -f deploy/docker/docker-compose.yml up -d --build
+
+      - name: Wait For Gateway
+        run: |
+          for i in $(seq 1 120); do
+            if node -e "require('https').get({ hostname: 'localhost', port: 8443, path: '/healthz', rejectUnauthorized: false }, r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Edge did not become healthy in time"
+          docker compose -f deploy/docker/docker-compose.yml ps
+          docker compose -f deploy/docker/docker-compose.yml logs --no-color --tail 200
+          exit 1
+
+      - name: Smoke Test (Edge)
+        run: bash scripts/smoke-edge.sh
+
+      - name: ZAP Baseline Scan (HTTPS)
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: https://localhost:8443
+          cmd_options: "-I -a"
+
+      - name: Tear Down
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.yml down -v

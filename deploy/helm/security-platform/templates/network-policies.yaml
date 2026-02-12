@@ -1,0 +1,236 @@
+{{- if .Values.networkPolicies.enabled }}
+# ============================================================================
+# Network Policies — Enforce segmentation by default
+# Only allow explicitly declared traffic paths
+# ============================================================================
+
+# Gateway: can receive external traffic, can talk to all internal services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-gateway-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: gateway
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - ports:
+        - port: {{ .Values.gateway.service.httpsPort }}
+          protocol: TCP
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: policy-engine
+      ports:
+        - port: {{ .Values.policyEngine.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: identity
+      ports:
+        - port: {{ .Values.identity.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: telemetry
+      ports:
+        - port: {{ .Values.telemetry.service.port }}
+    # DNS resolution
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+# Policy Engine: only gateway and identity can talk to it
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-policy-engine-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: policy-engine
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: identity
+      ports:
+        - port: {{ .Values.policyEngine.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: telemetry
+      ports:
+        - port: {{ .Values.telemetry.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+---
+# Identity: only gateway can talk to it
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-identity-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: identity
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - port: {{ .Values.identity.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: policy-engine
+      ports:
+        - port: {{ .Values.policyEngine.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: telemetry
+      ports:
+        - port: {{ .Values.telemetry.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    # OIDC providers (external HTTPS)
+    - to: []
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+---
+# Telemetry: gateway, identity, policy-engine, supply-chain can send events
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-telemetry-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: telemetry
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: identity
+        - podSelector:
+            matchLabels:
+              app: policy-engine
+        - podSelector:
+            matchLabels:
+              app: supply-chain
+      ports:
+        - port: {{ .Values.telemetry.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    # Alert webhooks (external HTTPS)
+    - to: []
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 53
+          protocol: UDP
+---
+# Supply Chain: only gateway can talk to it
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-supply-chain-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: supply-chain
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+      ports:
+        - port: {{ .Values.supplyChain.service.port }}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: telemetry
+      ports:
+        - port: {{ .Values.telemetry.service.port }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - port: 6379
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+---
+# Redis: only internal services can access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-redis-netpol
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: 6379
+  egress: []  # Redis should not initiate outbound connections
+{{- end }}

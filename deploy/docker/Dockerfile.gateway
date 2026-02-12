@@ -1,0 +1,42 @@
+# ============================================================================
+# Gateway Service — Multi-stage build with security hardening
+# ============================================================================
+FROM node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8 AS builder
+WORKDIR /build
+COPY package*.json tsconfig.json ./
+COPY shared/package.json shared/tsconfig.json ./shared/
+COPY gateway/package.json gateway/tsconfig.json ./gateway/
+# Reduce flaky npm installs in Docker (often caused by unstable IPv6 in build networks).
+ENV NODE_OPTIONS="--dns-result-order=ipv4first" \
+    npm_config_audit="false" \
+    npm_config_fund="false" \
+    npm_config_fetch_retries="5" \
+    npm_config_fetch_retry_mintimeout="20000" \
+    npm_config_fetch_retry_maxtimeout="120000"
+ RUN if [ -f package-lock.json ]; then npm ci --workspace=shared --workspace=gateway --no-audit --no-fund --prefer-offline; else npm install --workspace=shared --workspace=gateway --no-audit --no-fund --prefer-offline; fi
+COPY shared/ ./shared/
+COPY gateway/ ./gateway/
+RUN npm run build -w shared && npm run build -w gateway && npm prune --omit=dev --workspaces
+
+FROM node:20-alpine@sha256:09e2b3d9726018aecf269bd35325f46bf75046a643a66d28360ec71132750ec8 AS production
+RUN apk add --no-cache dumb-init \
+    && addgroup -g 1001 -S appgroup \
+    && adduser -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+COPY --from=builder --chown=appuser:appgroup /build/shared/dist ./shared/dist
+COPY --from=builder --chown=appuser:appgroup /build/shared/package.json ./shared/
+COPY --from=builder --chown=appuser:appgroup /build/gateway/dist ./gateway/dist
+COPY --from=builder --chown=appuser:appgroup /build/gateway/package.json ./gateway/
+COPY --from=builder --chown=appuser:appgroup /build/package.json ./
+COPY --from=builder --chown=appuser:appgroup /build/node_modules ./node_modules
+# Fix dangling workspace symlink: npm points @zerotrust/shared to /build/shared
+# which doesn't exist in the production stage — relink to /app/shared
+RUN rm -rf ./node_modules/@zerotrust/shared && \
+    mkdir -p ./node_modules/@zerotrust && \
+    ln -s /app/shared ./node_modules/@zerotrust/shared
+
+USER appuser
+EXPOSE 8443 8080
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "gateway/dist/src/index.js"]

@@ -1,0 +1,21 @@
+{
+  "runId": "longrun-20260211T193318Z",
+  "status": "PASS",
+  "startedAt": "2026-02-11T19:33:18Z",
+  "finishedAt": "2026-02-11T19:35:51Z",
+  "baseUrl": "https://localhost:8443",
+  "requestedTotalSeconds": 65,
+  "completedSeconds": 65,
+  "remainingSeconds": 0,
+  "chunkSeconds": 30,
+  "chunkCount": 3,
+  "passedChunks": 3,
+  "failedChunks": 0,
+  "abortedEarly": false,
+  "runComposeRegressionEachChunk": false,
+  "keepGoingOnFailure": false,
+  "artifacts": {
+    "masterLogFile": "/Users/Apple/Desktop/Security_platform/artifacts/soak/longrun-20260211T193318Z.log",
+    "masterCsvFile": "/Users/Apple/Desktop/Security_platform/artifacts/soak/longrun-20260211T193318Z.chunks.csv"
+  }
+}

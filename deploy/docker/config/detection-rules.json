@@ -1,0 +1,62 @@
+{
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "brute-force-login",
+      "name": "Brute Force Login Detection",
+      "description": "Detects excessive failed login attempts from a single source",
+      "severity": "high",
+      "enabled": true,
+      "conditions": {
+        "eventType": "auth.login.failed",
+        "threshold": 10,
+        "windowSeconds": 300,
+        "groupBy": "sourceIp"
+      },
+      "actions": ["alert", "block"]
+    },
+    {
+      "id": "privilege-escalation",
+      "name": "Privilege Escalation Attempt",
+      "description": "Detects attempts to access resources above assigned role",
+      "severity": "critical",
+      "enabled": true,
+      "conditions": {
+        "eventType": "authz.denied",
+        "threshold": 5,
+        "windowSeconds": 60,
+        "groupBy": "subjectId"
+      },
+      "actions": ["alert", "audit"]
+    },
+    {
+      "id": "anomalous-data-access",
+      "name": "Anomalous Data Access Pattern",
+      "description": "Detects unusual volume of data access requests",
+      "severity": "medium",
+      "enabled": true,
+      "conditions": {
+        "eventType": "resource.access",
+        "threshold": 100,
+        "windowSeconds": 60,
+        "groupBy": "subjectId"
+      },
+      "actions": ["alert"]
+    },
+    {
+      "id": "off-hours-admin",
+      "name": "Off-Hours Admin Activity",
+      "description": "Admin actions outside business hours",
+      "severity": "medium",
+      "enabled": true,
+      "conditions": {
+        "eventType": "admin.action",
+        "offHours": true,
+        "threshold": 1,
+        "windowSeconds": 1,
+        "groupBy": "subjectId"
+      },
+      "actions": ["alert", "audit"]
+    }
+  ]
+}

@@ -1,0 +1,293 @@
+# ============================================================================
+# Prometheus Configuration
+# ============================================================================
+# Scrape configurations for all Security Platform services
+# Collects metrics from gateway, identity, policy-engine, telemetry, supply-chain
+# ============================================================================
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'security-platform'
+    environment: 'production'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # --------------------------------------------------------------------------
+  # Gateway Service Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'gateway'
+    scheme: http
+    static_configs:
+      - targets: ['gateway:9095']
+        labels:
+          service: 'gateway'
+          component: 'edge'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'gateway:9095'
+
+  # --------------------------------------------------------------------------
+  # Identity Service Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'identity'
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      server_name: identity
+      min_version: TLS12
+    static_configs:
+      - targets: ['identity:8182']
+        labels:
+          service: 'identity'
+          component: 'auth'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'identity:8182'
+
+  # --------------------------------------------------------------------------
+  # Policy Engine (PDP) Service Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'policy-engine'
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      server_name: policy-engine
+      min_version: TLS12
+    static_configs:
+      - targets: ['policy-engine:8181']
+        labels:
+          service: 'policy-engine'
+          component: 'decision'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'policy-engine:8181'
+
+  # --------------------------------------------------------------------------
+  # Telemetry Service Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'telemetry'
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      server_name: telemetry
+      min_version: TLS12
+    static_configs:
+      - targets: ['telemetry:8183']
+        labels:
+          service: 'telemetry'
+          component: 'detection'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'telemetry:8183'
+
+  # --------------------------------------------------------------------------
+  # Supply Chain Service Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'supply-chain'
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/ca.crt
+      server_name: supply-chain
+      min_version: TLS12
+    static_configs:
+      - targets: ['supply-chain:8184']
+        labels:
+          service: 'supply-chain'
+          component: 'integrity'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'supply-chain:8184'
+
+  # --------------------------------------------------------------------------
+  # Jaeger Distributed Tracing Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'jaeger'
+    scheme: http
+    static_configs:
+      - targets: ['jaeger:14269']
+        labels:
+          service: 'jaeger'
+          component: 'tracing'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'jaeger:14269'
+
+  # --------------------------------------------------------------------------
+  # Host Metrics: Node Exporter (VM)
+  # --------------------------------------------------------------------------
+  - job_name: 'node-exporter'
+    scheme: http
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+          component: 'host'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'node-exporter:9100'
+
+  # --------------------------------------------------------------------------
+  # Edge Proxy: Envoy Metrics (admin /stats/prometheus)
+  # --------------------------------------------------------------------------
+  - job_name: 'envoy'
+    scheme: http
+    static_configs:
+      - targets: ['envoy:9901']
+        labels:
+          service: 'envoy'
+          component: 'edge'
+    metrics_path: '/stats/prometheus'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'envoy:9901'
+
+  # --------------------------------------------------------------------------
+  # Policy Engine: OPA Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'opa'
+    scheme: http
+    static_configs:
+      - targets: ['opa:8185']
+        labels:
+          service: 'opa'
+          component: 'policy'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'opa:8185'
+
+  # --------------------------------------------------------------------------
+  # Infrastructure: Redis Metrics (via redis_exporter)
+  # --------------------------------------------------------------------------
+  - job_name: 'redis-exporter'
+    scheme: http
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+          component: 'cache'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis-exporter:9121'
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Prometheus Self-Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    scheme: http
+    static_configs:
+      - targets: ['prometheus:9090']
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'prometheus:9090'
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Alertmanager Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'alertmanager'
+    scheme: http
+    static_configs:
+      - targets: ['alertmanager:9093']
+        labels:
+          service: 'alertmanager'
+          component: 'monitoring'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'alertmanager:9093'
+
+  # --------------------------------------------------------------------------
+  # Monitoring: Blackbox Exporter Self-Metrics
+  # --------------------------------------------------------------------------
+  - job_name: 'blackbox-exporter'
+    scheme: http
+    static_configs:
+      - targets: ['blackbox:9115']
+        labels:
+          service: 'blackbox'
+          component: 'monitoring'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'blackbox:9115'
+
+  # --------------------------------------------------------------------------
+  # External Probes: Blackbox (public HTTPS + TLS expiry)
+  # --------------------------------------------------------------------------
+  - job_name: 'blackbox'
+    scheme: http
+    metrics_path: '/probe'
+    params:
+      module: ['http_2xx']
+    file_sd_configs:
+      - files: ['/etc/prometheus/blackbox-targets.json']
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox:9115'
