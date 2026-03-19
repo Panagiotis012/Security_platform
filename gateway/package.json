@@ -39,7 +39,7 @@
     "@types/node": "^20.10.6",
     "ts-node": "^10.9.2",
     "eslint": "^8.56.0",
-    "@typescript-eslint/parser": "^6.18.0",
+    "@typescript-eslint/parser": "^8.57.1",
     "@typescript-eslint/eslint-plugin": "^6.18.0"
   },
   "engines": {
