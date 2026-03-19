@@ -17,7 +17,7 @@
     "winston": "^3.11.0",
     "ioredis": "^5.3.2",
     "node-cron": "^3.0.3",
-    "geoip-lite": "^1.4.10",
+    "geoip-lite": "^2.0.1",
     "@zerotrust/shared": "file:../shared"
   },
   "devDependencies": {
