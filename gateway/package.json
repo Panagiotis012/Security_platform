@@ -23,7 +23,7 @@
     "winston": "^3.11.0",
     "jsonwebtoken": "^9.0.2",
     "jose": "^5.2.0",
-    "http-proxy-middleware": "^2.0.6",
+    "http-proxy-middleware": "^4.0.0",
     "ioredis": "^5.3.2",
     "@zerotrust/shared": "file:../shared"
   },
