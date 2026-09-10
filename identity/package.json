@@ -14,7 +14,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.2.2",
+    "@simplewebauthn/server": "^14.0.1",
     "@zerotrust/shared": "file:../shared",
     "cookie-parser": "^1.4.6",
     "express": "^4.18.2",
